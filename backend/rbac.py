@@ -229,7 +229,13 @@ def is_primary_admin(user: dict) -> bool:
 
 def is_original_primary_admin(user: dict) -> bool:
     """Check if user is the original primary admin (level 0)."""
-    return user.get("role") == "primary_admin" and user.get("admin_level", 1) == 0
+    return (
+        user.get("is_super_admin") is True
+        or (
+            user.get("role") == "primary_admin"
+            and user.get("admin_level", 1) == 0
+        )
+    )
 
 
 def can_manage_role(actor: dict, target_role: str) -> bool:
