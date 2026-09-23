@@ -80,6 +80,24 @@ async def update_country(code: str, is_active: bool, adm=Depends(get_admin)):
     return {"message": f"Pays {'activé' if is_active else 'désactivé'}"}
 
 
+@router.delete("/admin/countries/{country_id}")
+async def delete_duplicate_country(country_id: str, adm=Depends(get_admin)):
+    """Delete a duplicate country record while preserving its country code."""
+    country = await db.countries.find_one({"id": country_id}, {"_id": 0})
+    if not country:
+        raise HTTPException(404, "Pays non trouvé")
+
+    duplicate_count = await db.countries.count_documents({"code": country["code"]})
+    if duplicate_count < 2:
+        raise HTTPException(400, "Impossible de supprimer le dernier pays avec ce code")
+
+    result = await db.countries.delete_one({"id": country_id})
+    if result.deleted_count != 1:
+        raise HTTPException(404, "Pays non trouvé")
+
+    return {"message": "Doublon supprimé", "code": country["code"]}
+
+
 # === COUNTRY SERVICE CONFIGURATION ===
     # National services
     send_national: Optional[bool] = None
@@ -381,5 +399,4 @@ async def pay_via_qr(qr_data: str, amount: float, currency: str = "USD", u=Depen
             await db.wallets.insert_one({"id": gen_id(), "user_id": receiver["id"], "currency": currency, "balance": amount, "is_primary": False, "created_at": n})
     
     return {"message": "Paiement effectué", "transaction_id": tx_id, "receiver": receiver["name"], "amount": amount, "fee": fee}
-
 
