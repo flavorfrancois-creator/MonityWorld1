@@ -1074,7 +1074,7 @@ app.post('/session/:sessionId/confirm-pairing', async (req, res) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`WhatsApp Web Scraper running on port ${PORT}`);
-    console.log(`Browser: ${CHROME_PATH} (exists: ${fs.existsSync(CHROME_PATH)})`);
+    console.log(`Browser: ${BROWSER_PATH} (exists: ${fs.existsSync(BROWSER_PATH)})`);
     console.log(`Mode: Autonomous page — no polling`);
     console.log(`Sessions dir: ${SESSIONS_DIR}`);
 });
