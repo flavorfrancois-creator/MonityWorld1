@@ -169,7 +169,7 @@ export default function AdminLayout({ children }) {
         <Button 
           variant="ghost" 
           className={`w-full ${isCollapsed && !mobile ? 'justify-center px-2' : 'justify-start gap-3'} text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-200`} 
-          onClick={logout} 
+          onClick={() => logout('/admin/login')} 
           data-testid="admin-logout-btn"
           title={isCollapsed && !mobile ? 'Déconnexion' : undefined}
         >

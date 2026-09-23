@@ -28,11 +28,11 @@ export function AuthProvider({ children }) {
     setUser(userData);
   };
 
-  const logout = () => {
+  const logout = (redirectPath = '/') => {
     localStorage.removeItem('monity_token');
     localStorage.removeItem('monity_user');
     setUser(null);
-    window.location.href = '/';
+    window.location.href = redirectPath;
   };
 
   const refreshUser = async () => {
