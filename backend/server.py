@@ -5140,6 +5140,16 @@ app.include_router(mobile_compat_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','), allow_methods=["*"], allow_headers=["*"])
 
 
+@app.get("/")
+async def root_status():
+    return {
+        "service": "Monity World API",
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 @app.get("/health")
 async def health_check():
     """K8s health check endpoint — root level"""
