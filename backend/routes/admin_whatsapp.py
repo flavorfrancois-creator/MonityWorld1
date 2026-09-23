@@ -33,7 +33,7 @@ from models.schemas import WhatsAppCloudApiTestReq, WhatsAppConfigReq, WhatsAppC
 logger = logging.getLogger(__name__)
 from utils.activity import log_admin_activity, ACTIVITY_ACTIONS, ACTIVITY_RESOURCES
 
-router = APIRouter(prefix="/api/admin", tags=['Admin WhatsApp'])
+router = APIRouter(prefix="/api", tags=['Admin WhatsApp'])
 
 # === WHATSAPP WEB INTEGRATION ===
 
@@ -1127,5 +1127,4 @@ async def get_otp_template(template_name: str) -> dict:
         "message_template": "*Monity World*\n\nVotre code est: *{code}*\n\nCe code expire dans {validity} minutes.\n\n_Monity World_",
         "validity_minutes": 5
     }
-
 
