@@ -1,0 +1,83 @@
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:6.0
+    container_name: monity-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=monity_world
+    networks:
+      - monity-network
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: monity-backend
+    restart: unless-stopped
+    expose:
+      - "8001"
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - DB_NAME=monity_world
+      - JWT_SECRET=${JWT_SECRET:-monity-secret-change-me}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - WHATSAPP_SERVICE_URL=http://whatsapp:8002
+    depends_on:
+      - mongodb
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - monity-network
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL:?Set REACT_APP_BACKEND_URL}
+    container_name: monity-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - monity-network
+
+  # WhatsApp Service (Node.js + Playwright)
+  whatsapp:
+    build:
+      context: ./whatsapp-service
+      dockerfile: Dockerfile
+    container_name: monity-whatsapp
+    restart: unless-stopped
+    expose:
+      - "8002"
+    environment:
+      - WHATSAPP_PORT=8002
+    volumes:
+      - whatsapp_sessions:/app/.wwebjs_sessions
+      - whatsapp_auth:/app/.wwebjs_auth
+    networks:
+      - monity-network
+    # Required for Playwright/Puppeteer
+    shm_size: '2gb'
+    cap_add:
+      - SYS_ADMIN
+
+volumes:
+  mongodb_data:
+  backend_uploads:
+  whatsapp_sessions:
+  whatsapp_auth:
+
+networks:
+  monity-network:
+    driver: bridge

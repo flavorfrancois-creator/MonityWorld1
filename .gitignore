@@ -1,0 +1,13 @@
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*
+!.env.coolify.example
+**/*.log
+frontend/build/
+frontend/coverage/
+whatsapp-service/.wa_sessions/
+whatsapp-service/.wwebjs_sessions/
+whatsapp-service/.wwebjs_auth/
+*.zip

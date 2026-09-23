@@ -1,0 +1,9 @@
+{
+  "ignorePatterns": [
+    "public/mobile-app/**",
+    "**/mobile-app/**/_expo/**"
+  ],
+  "globals": {
+    "__d": "readonly"
+  }
+}

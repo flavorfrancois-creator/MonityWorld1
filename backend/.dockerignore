@@ -1,0 +1,9 @@
+node_modules/
+.wa_sessions/
+*.log
+.env
+__pycache__/
+*.pyc
+.git/
+.emergent/
+deploy/nginx/ssl/

@@ -1,0 +1,71 @@
+services:
+  mongodb:
+    image: mongo:6.0
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: ${DB_NAME:-monity_world}
+    networks:
+      - monity-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8001"
+    environment:
+      MONGO_URL: mongodb://mongodb:27017
+      DB_NAME: ${DB_NAME:-monity_world}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in Coolify}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      WHATSAPP_SERVICE_URL: http://whatsapp:8002
+    depends_on:
+      - mongodb
+      - whatsapp
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - monity-network
+
+  whatsapp:
+    build:
+      context: ./whatsapp-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8002"
+    environment:
+      WHATSAPP_PORT: 8002
+    volumes:
+      - whatsapp_sessions:/app/.wa_sessions
+    networks:
+      - monity-network
+    shm_size: "2gb"
+    cap_add:
+      - SYS_ADMIN
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:?Set the public backend URL in Coolify}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    networks:
+      - monity-network
+
+volumes:
+  mongodb_data:
+  backend_uploads:
+  whatsapp_sessions:
+
+networks:
+  monity-network:
+    driver: bridge
