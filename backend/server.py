@@ -1434,7 +1434,11 @@ async def admin_login(req: LoginReq):
     # Generate unique session ID for admin login
     session_id = str(uuid.uuid4())
     await db.users.update_one({"id": user["id"]}, {"$set": {"active_session_id": session_id, "last_login_at": now_iso()}})
-    return {"token": create_token(user["id"], user["role"], session_id), "user": user}
+    return {
+        "token": create_token(user["id"], user["role"], session_id),
+        "user": user,
+        "requires_password_change": not bool(user.get("password_changed_at")),
+    }
 
 
 @api_router.post("/auth/forgot-password")

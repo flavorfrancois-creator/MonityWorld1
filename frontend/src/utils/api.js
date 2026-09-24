@@ -1,11 +1,13 @@
 import axios from 'axios';
 
 const configuredBackendUrl = process.env.REACT_APP_BACKEND_URL;
-// HTTPS pages cannot call the deployed HTTP backend directly; use the
-// same-origin proxy in that case so the browser never makes a mixed request.
-const BACKEND_URL = window.location.protocol === 'https:'
-  ? window.location.origin
-  : (configuredBackendUrl || window.location.origin);
+// Prefer the configured public backend when it is reachable without mixed
+// content. Same-origin is the fallback for local proxy deployments.
+const configuredBackendIsSafe = configuredBackendUrl
+  && (window.location.protocol !== 'https:' || configuredBackendUrl.startsWith('https://'));
+const BACKEND_URL = configuredBackendIsSafe
+  ? configuredBackendUrl.replace(/\/$/, '')
+  : window.location.origin;
 
 const API = axios.create({
   baseURL: `${BACKEND_URL}/api`,
