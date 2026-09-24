@@ -1404,20 +1404,6 @@ async def admin_login(req: LoginReq):
     return {"token": create_token(user["id"], user["role"], session_id), "user": user}
 
 
-@api_router.post("/admin/cleanup-legacy-merchant-data")
-async def cleanup_legacy_merchant_data(adm=Depends(get_admin)):
-    if not adm.get("is_super_admin"):
-        raise HTTPException(403, "Accès réservé à l'administrateur principal")
-    merchant_users = await db.users.find({"role": "merchant"}, {"id": 1, "_id": 0}).to_list(10000)
-    merchant_ids = [user["id"] for user in merchant_users]
-    result = await db.users.delete_many({"role": "merchant"})
-    await db.merchants.delete_many({})
-    await db.merchant_transactions.delete_many({})
-    await db.invoices.delete_many({})
-    await db.products.delete_many({})
-    return {"deleted_users": result.deleted_count, "deleted_merchant_data": True}
-
-
 @api_router.post("/auth/forgot-password")
 async def forgot_password(email: str = Body(..., embed=True)):
     """Send password reset link via email AND WhatsApp"""
