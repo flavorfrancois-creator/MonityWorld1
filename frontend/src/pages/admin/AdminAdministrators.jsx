@@ -472,19 +472,21 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
               </div>
             )}
             {registrationStep === 3 && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><label className="text-sm font-medium">Nom complet *</label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-              <div className="space-y-2"><label className="text-sm font-medium">Date de naissance *</label><Input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value }))} /></div>
-              <div className="space-y-2"><label className="text-sm font-medium">Lieu de naissance *</label><Input value={form.place_of_birth} onChange={e => setForm(f => ({ ...f, place_of_birth: e.target.value }))} /></div>
-              <div className="space-y-2"><label className="text-sm font-medium">Mot de passe *</label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} /></div>
-            </div>
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><label className="text-sm font-medium">Nom complet *</label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+                  <div className="space-y-2"><label className="text-sm font-medium">Date de naissance *</label><Input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value }))} /></div>
+                  <div className="space-y-2"><label className="text-sm font-medium">Lieu de naissance *</label><Input value={form.place_of_birth} onChange={e => setForm(f => ({ ...f, place_of_birth: e.target.value }))} /></div>
+                  <div className="space-y-2"><label className="text-sm font-medium">Mot de passe *</label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} /></div>
+                </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">État de fonctionnement</label>
-              <p className="text-xs text-muted-foreground">
-                Cette Fonction est limitée au pays de résidence sélectionné : <strong>{form.country}</strong>.
-              </p>
-            </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">État de fonctionnement</label>
+                  <p className="text-xs text-muted-foreground">
+                    Cette Fonction est limitée au pays de résidence sélectionné : <strong>{form.country}</strong>.
+                  </p>
+                </div>
+              </>
             )}
           </TabsContent>
 
