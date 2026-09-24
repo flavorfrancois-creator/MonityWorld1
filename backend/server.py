@@ -5123,6 +5123,18 @@ from routes.admin_rules import router as admin_rules_router
 from routes.admin_stats import router as admin_stats_router
 from routes.admin_countries import router as admin_countries_router
 from routes.mobile_compat import router as mobile_compat_router
+from routes.merchant import router as merchant_router, setup_merchant_routes
+
+setup_merchant_routes(
+    db,
+    get_current_user,
+    hash_pw,
+    verify_pw,
+    create_token,
+    gen_account,
+    gen_ref,
+    get_country_config,
+)
 
 app.include_router(admin_whatsapp_router)
 app.include_router(partner_routes_router)
@@ -5136,6 +5148,7 @@ app.include_router(admin_rules_router)
 app.include_router(admin_stats_router)
 app.include_router(admin_countries_router)
 app.include_router(mobile_compat_router)
+app.include_router(merchant_router)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','), allow_methods=["*"], allow_headers=["*"])
 
