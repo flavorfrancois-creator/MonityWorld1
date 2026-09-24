@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Eye, EyeOff, Shield, Lock, Mail, Phone, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, Shield, Lock, Mail, Phone, AlertTriangle } from 'lucide-react';
 
 export default function AdminLoginPage() {
   const { login } = useAuth();
@@ -18,6 +18,10 @@ export default function AdminLoginPage() {
   const [twoFAOtp, setTwoFAOtp] = useState('');
   const [pendingLoginData, setPendingLoginData] = useState(null);
   const [sessionExpiredMsg, setSessionExpiredMsg] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetMode, setResetMode] = useState(false);
+  const [resetOtp, setResetOtp] = useState('');
 
   // Check for session expired flag on mount
   useEffect(() => {
@@ -51,6 +55,7 @@ export default function AdminLoginPage() {
         toast.info('Un code OTP a été envoyé via WhatsApp');
       } else {
         login(res.data.token, res.data.user);
+        setMustChangePassword(Boolean(res.data.requires_password_change));
         toast.success('Connexion réussie !');
         navigate('/admin');
       }
@@ -58,6 +63,49 @@ export default function AdminLoginPage() {
       toast.error(e.response?.data?.detail || 'Identifiants incorrects');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const changeInitialPassword = async () => {
+    if (newPassword.length < 8) {
+      toast.error('Le mot de passe doit contenir au moins 8 caractères');
+      return;
+    }
+    setLoading(true);
+    try {
+      await API.post('/auth/change-password', {
+        current_password: loginData.password,
+        new_password: newPassword,
+      });
+      setMustChangePassword(false);
+      toast.success('Mot de passe enregistré');
+      navigate('/admin');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Impossible de modifier le mot de passe');
+    } finally { setLoading(false); }
+  };
+
+  const requestReset = async () => {
+    try {
+      await API.post('/auth/admin/request-password-reset', { email: loginData.identifier.trim() });
+      setResetMode(true);
+      toast.success('Code OTP envoyé à votre adresse mail');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Impossible d’envoyer le code OTP');
+    }
+  };
+
+  const resetPassword = async () => {
+    try {
+      await API.post('/auth/admin/reset-password', {
+        email: loginData.identifier.trim(), otp: resetOtp, new_password: newPassword,
+      });
+      setResetMode(false);
+      setNewPassword('');
+      setResetOtp('');
+      toast.success('Mot de passe réinitialisé');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Code OTP incorrect');
     }
   };
 
@@ -73,9 +121,10 @@ export default function AdminLoginPage() {
         otp: twoFAOtp,
       });
       login(res.data.token, res.data.user);
+      setMustChangePassword(Boolean(res.data.requires_password_change));
       toast.success('Connexion réussie !');
       setShow2FAModal(false);
-      navigate('/admin');
+      if (!res.data.requires_password_change) navigate('/admin');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Code OTP incorrect');
     } finally {
@@ -119,6 +168,19 @@ export default function AdminLoginPage() {
               {loading ? 'Vérification...' : 'Vérifier'}
             </Button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mustChangePassword) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+          <h1 className="text-xl font-bold text-white">Définir votre mot de passe</h1>
+          <p className="text-sm text-zinc-400">Vous devez modifier votre mot de passe avant de continuer.</p>
+          <Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Nouveau mot de passe" className="bg-zinc-800 text-white" />
+          <Button onClick={changeInitialPassword} disabled={loading} className="w-full bg-amber-600">Enregistrer</Button>
         </div>
       </div>
     );
@@ -227,15 +289,19 @@ export default function AdminLoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-zinc-800">
-            <button
-              data-testid="admin-login-back-btn"
-              onClick={() => navigate('/')}
-              className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors mx-auto"
-            >
-              <ArrowLeft size={14} />
-              Retour à l'espace client
+          {!resetMode ? (
+            <button type="button" onClick={requestReset} className="w-full mt-4 text-sm text-amber-400 hover:text-amber-300">
+              Réinitialiser par OTP email
             </button>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <Input value={resetOtp} onChange={e => setResetOtp(e.target.value)} placeholder="Code OTP reçu par email" className="bg-zinc-800 text-white" />
+              <Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Nouveau mot de passe" className="bg-zinc-800 text-white" />
+              <Button type="button" onClick={resetPassword} className="w-full bg-amber-600">Confirmer</Button>
+            </div>
+          )}
+
+          <div className="mt-6 pt-4 border-t border-zinc-800">
           </div>
         </div>
 

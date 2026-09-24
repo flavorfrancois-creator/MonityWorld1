@@ -14,6 +14,8 @@ import string
 import uuid
 import base64
 import secrets
+import smtplib
+from email.message import EmailMessage
 from pathlib import Path
 from dotenv import load_dotenv
 import bcrypt
@@ -110,6 +112,25 @@ def validate_nfc_serial(serial: str) -> bool:
     import re
     pattern = r'^[0-9A-Z]{2}(:[0-9A-Z]{2}){6}$'
     return bool(re.match(pattern, serial.upper()))
+
+
+def send_email_otp(email: str, otp: str):
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME")
+    password = os.getenv("SMTP_PASSWORD")
+    sender = os.getenv("SMTP_FROM", username)
+    if not all([host, username, password, sender]):
+        raise RuntimeError("SMTP is not configured")
+    message = EmailMessage()
+    message["Subject"] = "Monity World - Réinitialisation du mot de passe"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(f"Votre code OTP est : {otp}\n\nCe code expire dans 10 minutes.")
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        smtp.starttls()
+        smtp.login(username, password)
+        smtp.send_message(message)
 
 
 def get_admin_country_filter(admin: dict) -> list:
@@ -1165,6 +1186,10 @@ async def register(req: RegisterReq):
     if req.email:
         if await db.users.find_one({"email": req.email.lower()}):
             raise HTTPException(400, "Cet email est déjà enregistré")
+        if await db.users.find_one({"email": req.email.lower(), "role": {"$in": NON_CLIENT_ROLES}}):
+            raise HTTPException(400, "Cette adresse mail est réservée à un administrateur")
+    if await db.users.find_one({"phone": req.phone, "role": {"$in": NON_CLIENT_ROLES}}):
+        raise HTTPException(400, "Ce numéro est réservé à un administrateur")
     
     # Check if NFC card number is provided and valid
     linked_card = None
@@ -1326,7 +1351,11 @@ async def login(req: LoginReq):
     # Generate unique session ID and store it
     session_id = str(uuid.uuid4())
     await db.users.update_one({"id": user["id"]}, {"$set": {"active_session_id": session_id, "last_login_at": now_iso()}})
-    return {"token": create_token(user["id"], user["role"], session_id), "user": user}
+    return {
+        "token": create_token(user["id"], user["role"], session_id),
+        "user": user,
+        "requires_password_change": not bool(user.get("password_changed_at")),
+    }
 
 
 @api_router.post("/auth/verify-2fa")
@@ -1357,7 +1386,11 @@ async def verify_2fa(user_id: str = Body(...), otp: str = Body(...)):
     # Generate unique session ID
     session_id = str(uuid.uuid4())
     await db.users.update_one({"id": user_id}, {"$set": {"active_session_id": session_id, "last_login_at": now_iso()}})
-    return {"token": create_token(user["id"], user["role"], session_id), "user": user}
+    return {
+        "token": create_token(user["id"], user["role"], session_id),
+        "user": user,
+        "requires_password_change": not bool(user.get("password_changed_at")),
+    }
 
 
 @api_router.post("/auth/admin/login")
@@ -1441,6 +1474,49 @@ async def forgot_password(email: str = Body(..., embed=True)):
     return {"message": "Lien de réinitialisation envoyé par email et WhatsApp"}
 
 
+@api_router.post("/auth/admin/request-password-reset")
+async def request_admin_password_reset(email: str = Body(..., embed=True)):
+    user = await db.users.find_one({"email": email.lower(), "role": {"$in": NON_CLIENT_ROLES}})
+    if not user:
+        return {"message": "Si l'adresse existe, un code a été envoyé"}
+    otp = gen_otp()
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "admin_password_reset_otp": hash_pw(otp),
+        "admin_password_reset_expires": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+    }})
+    try:
+        send_email_otp(user["email"], otp)
+    except Exception as exc:
+        logger.error("Admin password reset email failed: %s", exc)
+        raise HTTPException(503, "Le service email n'est pas configuré")
+    return {"message": "Code OTP envoyé à l'adresse mail du compte"}
+
+
+@api_router.post("/auth/admin/reset-password")
+async def reset_admin_password(
+    email: str = Body(...),
+    otp: str = Body(...),
+    new_password: str = Body(...),
+):
+    user = await db.users.find_one({"email": email.lower(), "role": {"$in": NON_CLIENT_ROLES}})
+    if not user or not user.get("admin_password_reset_otp"):
+        raise HTTPException(400, "Code OTP incorrect ou expiré")
+    expires = user.get("admin_password_reset_expires")
+    if expires and datetime.fromisoformat(expires) < datetime.now(timezone.utc):
+        raise HTTPException(400, "Code OTP expiré")
+    if not verify_pw(otp, user["admin_password_reset_otp"]):
+        raise HTTPException(400, "Code OTP incorrect")
+    if len(new_password) < 8:
+        raise HTTPException(400, "Le mot de passe doit contenir au moins 8 caractères")
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "password": hash_pw(new_password),
+        "password_changed_at": now_iso(),
+        "admin_password_reset_otp": None,
+        "admin_password_reset_expires": None,
+    }})
+    return {"message": "Mot de passe réinitialisé avec succès"}
+
+
 @api_router.post("/auth/toggle-2fa")
 async def toggle_two_factor(enable: bool = Body(..., embed=True), u=Depends(get_current_user)):
     """Enable or disable 2FA for user account"""
@@ -1461,7 +1537,10 @@ async def change_password(req: PasswordChangeReq, u=Depends(get_current_user)):
     if len(req.new_password) < 6:
         raise HTTPException(400, "Le nouveau mot de passe doit contenir au moins 6 caractères")
     
-    await db.users.update_one({"id": u["id"]}, {"$set": {"password": hash_pw(req.new_password)}})
+    await db.users.update_one({"id": u["id"]}, {"$set": {
+        "password": hash_pw(req.new_password),
+        "password_changed_at": now_iso(),
+    }})
     return {"message": "Mot de passe modifié avec succès"}
 
 @api_router.post("/auth/request-reset")
