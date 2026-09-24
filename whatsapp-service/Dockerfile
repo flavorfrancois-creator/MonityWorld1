@@ -2,6 +2,8 @@ FROM node:20-slim
 
 WORKDIR /app
 
+RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
@@ -26,8 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY package.json ./
-RUN npm install
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
 RUN npx playwright install --with-deps chromium
 

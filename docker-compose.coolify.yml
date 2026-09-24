@@ -9,6 +9,23 @@ services:
     networks:
       - monity-network
 
+  whatsapp:
+    build:
+      context: ./whatsapp-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8002"
+    environment:
+      WHATSAPP_PORT: 8002
+    volumes:
+      - whatsapp_sessions:/app/.wa_sessions
+    networks:
+      - monity-network
+    shm_size: "2gb"
+    cap_add:
+      - SYS_ADMIN
+
   backend:
     build:
       context: ./backend
@@ -30,29 +47,12 @@ services:
     networks:
       - monity-network
 
-  whatsapp:
-    build:
-      context: ./whatsapp-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    expose:
-      - "8002"
-    environment:
-      WHATSAPP_PORT: 8002
-    volumes:
-      - whatsapp_sessions:/app/.wa_sessions
-    networks:
-      - monity-network
-    shm_size: "2gb"
-    cap_add:
-      - SYS_ADMIN
-
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        BACKEND_PROXY_URL: ${BACKEND_PROXY_URL:-http://backend:8001}
+        BACKEND_PROXY_URL: http://backend:8001
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-3000}:3000"

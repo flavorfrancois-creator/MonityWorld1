@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js"
   },
+  "packageManager": "yarn@1.22.22",
   "dependencies": {
     "axios": "^1.6.0",
     "cors": "^2.8.5",
