@@ -5234,6 +5234,19 @@ async def health_check():
     """K8s health check endpoint — root level"""
     return {"status": "ok"}
 
+
+@api_router.get("/system/sync")
+async def system_sync(u=Depends(get_current_user)):
+    """Lightweight periodic synchronization check for connected frontends."""
+    return {
+        "server_time": now_iso(),
+        "api_version": os.getenv("API_VERSION", "1"),
+        "user": u,
+        "user_updated_at": u.get("updated_at"),
+        "permissions_updated_at": u.get("permissions_updated_at"),
+        "services_updated_at": u.get("services_updated_at"),
+    }
+
 CURRENCIES_SEED = [
     {"code": "USD", "name": "Dollar US", "symbol": "$", "rate_to_usd": 1.0},
     {"code": "EUR", "name": "Euro", "symbol": "€", "rate_to_usd": 0.92},

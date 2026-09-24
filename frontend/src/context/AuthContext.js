@@ -22,6 +22,32 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (!user || !localStorage.getItem('monity_token')) return undefined;
+
+    const synchronize = async () => {
+      try {
+        const res = await API.get('/system/sync');
+        const current = JSON.parse(localStorage.getItem('monity_user') || '{}');
+        const synchronizedUser = {
+          ...current,
+          ...(res.data.user || {}),
+          updated_at: res.data.user_updated_at || current.updated_at,
+          permissions_updated_at: res.data.permissions_updated_at || current.permissions_updated_at,
+          services_updated_at: res.data.services_updated_at || current.services_updated_at,
+        };
+        localStorage.setItem('monity_user', JSON.stringify(synchronizedUser));
+        setUser(synchronizedUser);
+      } catch (error) {
+        console.error('Periodic synchronization failed', error);
+      }
+    };
+
+    synchronize();
+    const interval = window.setInterval(synchronize, 60000);
+    return () => window.clearInterval(interval);
+  }, [user?.id]);
+
   const login = (token, userData) => {
     localStorage.setItem('monity_token', token);
     localStorage.setItem('monity_user', JSON.stringify(userData));
