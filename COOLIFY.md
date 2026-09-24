@@ -14,6 +14,11 @@ Use `docker-compose.coolify.yml` as the deployment file in Coolify.
 
 MongoDB data, backend uploads, and WhatsApp sessions are stored in named Docker volumes.
 
+Every service has a Docker health check. Coolify will mark a container unhealthy
+when its local health endpoint or database probe fails, and the frontend waits
+for the backend health check before starting. The checks are intentionally
+startup-tolerant because WhatsApp/Chromium can take up to 45 seconds to start.
+
 ## Important
 
 The browser calls the frontend's same-origin `/api` path. Nginx proxies that path to

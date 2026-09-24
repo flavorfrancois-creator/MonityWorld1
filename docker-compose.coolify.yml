@@ -6,6 +6,12 @@ services:
       - mongodb_data:/data/db
     environment:
       MONGO_INITDB_DATABASE: ${DB_NAME:-monity_world}
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - monity-network
 
@@ -25,6 +31,12 @@ services:
     shm_size: "2gb"
     cap_add:
       - SYS_ADMIN
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8002/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
 
   backend:
     build:
@@ -40,10 +52,18 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       WHATSAPP_SERVICE_URL: http://whatsapp:8002
     depends_on:
-      - mongodb
-      - whatsapp
+      mongodb:
+        condition: service_healthy
+      whatsapp:
+        condition: service_started
     volumes:
       - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - monity-network
 
@@ -57,7 +77,14 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://127.0.0.1:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
       - monity-network
 
