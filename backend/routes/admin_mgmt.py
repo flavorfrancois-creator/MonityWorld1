@@ -302,6 +302,16 @@ async def get_administrator_details(admin_id: str, adm=Depends(get_admin)):
 async def create_administrator_v2(req: AdminCreateReqV2, adm=Depends(get_admin_with_kyc)):
     """Create a new administrator with RBAC permissions. Requires approved KYC."""
     check_permission(adm, "admins.create")
+    if not req.verification_token:
+        raise HTTPException(400, "Vérification OTP requise avant la création")
+    verification = await db.admin_registration_verifications.find_one({
+        "verification_token": req.verification_token,
+        "verified": True,
+        "phone": req.phone,
+        "email": (req.email or "").lower().strip(),
+    })
+    if not verification:
+        raise HTTPException(400, "Vérification OTP invalide ou expirée")
     
     # Validate role creation permission
     check_can_create_role(adm, req.role)
