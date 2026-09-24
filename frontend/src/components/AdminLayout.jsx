@@ -31,7 +31,7 @@ const ADMIN_NAV = [
   { path: '/admin/client-deposit', icon: Banknote, label: 'Dépôt Client', permission: 'clients.deposit' },
   { path: '/admin/activity-logs', icon: Activity, label: 'Historique Activité', permission: 'admins.view' },
   { path: '/admin/api-integrations', icon: Plug, label: 'Intégrations API', permission: 'settings.view' },
-  { path: '/admin/whatsapp', icon: MessageCircle, label: 'WhatsApp', permission: 'primary_admin_only' },
+  { path: '/admin/whatsapp', icon: MessageCircle, label: 'Connections', permission: 'primary_admin_only' },
   { path: '/admin/bank-cards', icon: Wallet, label: 'Cartes Bancaires', permission: 'primary_admin_only' },
   { path: '/admin/nfc-subscriptions', icon: CalendarClock, label: 'Abonnements NFC', permission: 'primary_admin_only' },
   { path: '/admin/settings', icon: Settings, label: 'Paramètres', permission: 'settings.view' },

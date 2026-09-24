@@ -691,16 +691,16 @@ export default function AdminWhatsapp() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-fade-in-up">
         <div>
           <h2 className="text-xl font-bold text-foreground flex items-center gap-2" style={{fontFamily:'Manrope'}}>
-            <MessageCircle className="text-green-500" /> Gestion WhatsApp & SMS
+            <MessageCircle className="text-green-500" /> Gestion des connexions & SMS
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">Configurez WhatsApp et les API SMS pour les OTP et notifications</p>
+          <p className="text-sm text-muted-foreground mt-1">Configurez les connexions et les API SMS pour les OTP et notifications</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => { resetSmsForm(); setShowSmsModal(true); }} variant="outline" data-testid="add-sms-api-btn">
             <MessageSquare size={16} className="mr-2" /> Ajouter API SMS
           </Button>
           <Button onClick={() => { resetForm(); setShowAddModal(true); }} className="btn-primary-glow" data-testid="add-whatsapp-btn">
-            <Plus size={16} className="mr-2" /> Ajouter WhatsApp
+            <Plus size={16} className="mr-2" /> Ajouter une connexion
           </Button>
         </div>
       </div>

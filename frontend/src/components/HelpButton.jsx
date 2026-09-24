@@ -107,7 +107,7 @@ const HELP_CONTENT = {
     ]
   },
   '/admin/whatsapp': {
-    title: 'Configuration WhatsApp',
+    title: 'Configuration des connexions',
     description: 'Gérez les services de messagerie',
     sections: [
       { title: 'Session WhatsApp', content: 'Scannez le QR code pour connecter votre numéro WhatsApp professionnel.' },
