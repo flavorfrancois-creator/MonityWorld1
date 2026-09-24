@@ -44,6 +44,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=['Admin Management'])
 
 
+def ensure_admin_country_scope(actor: dict, target: dict):
+    """Administrators may only manage functions in an accessible country."""
+    accessible = get_accessible_countries(actor)
+    if accessible and target.get("country") not in accessible:
+        raise HTTPException(403, "Vous n'avez pas accès au pays de cet administrateur")
+
+
+def check_function_management_access(actor: dict, permission: str):
+    if is_primary_admin(actor) or is_original_primary_admin(actor):
+        return
+    raise HTTPException(403, "Seuls les administrateurs principaux peuvent gérer les Fonctions")
+
+
 # === MODEL FOR CLIENT DEPOSIT ===
 class ClientDepositReq(BaseModel):
     client_phone: Optional[str] = None
@@ -77,7 +90,7 @@ def _send_admin_email_otp(email: str, otp: str):
 
 @router.post("/administrators/registration/start")
 async def start_admin_registration(req: AdminRegistrationStartReq, adm=Depends(get_admin)):
-    check_permission(adm, "admins.create")
+    check_function_management_access(adm, "admins.create")
     country = await db.countries.find_one({"code": req.country.upper()}, {"_id": 0})
     if not country:
         raise HTTPException(400, "Pays de résidence invalide")
@@ -128,7 +141,7 @@ async def verify_admin_registration(req: AdminRegistrationVerifyReq, adm=Depends
 
 @router.post("/administrators/registration/complete")
 async def complete_admin_registration(req: AdminRegistrationCompleteReq, adm=Depends(get_admin)):
-    check_permission(adm, "admins.create")
+    check_function_management_access(adm, "admins.create")
     record = await db.admin_registration_verifications.find_one({
         "verification_token": req.verification_token,
         "verified": True,
@@ -140,6 +153,8 @@ async def complete_admin_registration(req: AdminRegistrationCompleteReq, adm=Dep
     if len(req.password) < 8:
         raise HTTPException(400, "Le mot de passe doit contenir au moins 8 caractères")
     check_can_create_role(adm, req.role)
+    if not is_primary_admin(adm) and not is_original_primary_admin(adm) and (req.can_create_roles or req.can_suspend_roles):
+        raise HTTPException(403, "Seuls les administrateurs principaux peuvent déléguer la gestion des fonctions")
     for permission in req.permissions:
         if permission not in PERMISSIONS:
             raise HTTPException(400, f"Permission invalide: {permission}")
@@ -148,7 +163,7 @@ async def complete_admin_registration(req: AdminRegistrationCompleteReq, adm=Dep
     admin_data.update({
         "admin_level": None,
         "permissions": req.permissions,
-        "assigned_countries": req.assigned_countries,
+        "assigned_countries": [record["country"]],
         "can_create_roles": req.can_create_roles,
         "can_suspend_roles": req.can_suspend_roles,
         "created_by_admin_id": adm["id"],
@@ -301,7 +316,7 @@ async def get_administrator_details(admin_id: str, adm=Depends(get_admin)):
 @router.post("/administrators")
 async def create_administrator_v2(req: AdminCreateReqV2, adm=Depends(get_admin_with_kyc)):
     """Create a new administrator with RBAC permissions. Requires approved KYC."""
-    check_permission(adm, "admins.create")
+    check_function_management_access(adm, "admins.create")
     if not req.verification_token:
         raise HTTPException(400, "Vérification OTP requise avant la création")
     verification = await db.admin_registration_verifications.find_one({
@@ -315,6 +330,11 @@ async def create_administrator_v2(req: AdminCreateReqV2, adm=Depends(get_admin_w
     
     # Validate role creation permission
     check_can_create_role(adm, req.role)
+    if not is_primary_admin(adm) and not is_original_primary_admin(adm) and (req.can_create_roles or req.can_suspend_roles):
+        raise HTTPException(403, "Seuls les administrateurs principaux peuvent déléguer la gestion des fonctions")
+    if req.assigned_countries and req.country not in req.assigned_countries:
+        raise HTTPException(400, "Les permissions doivent rester limitées au pays de résidence")
+    req.assigned_countries = [req.country]
     
     # Check if phone already exists
     if await db.users.find_one({"phone": req.phone}):
@@ -402,7 +422,7 @@ async def update_administrator_permissions(
     adm=Depends(get_admin_with_kyc)
 ):
     """Update administrator permissions and access. Requires approved KYC."""
-    check_permission(adm, "admins.assign_permissions")
+    check_function_management_access(adm, "admins.assign_permissions")
     
     admin = await db.users.find_one({"id": admin_id})
     if not admin:
@@ -415,6 +435,11 @@ async def update_administrator_permissions(
     # Cannot modify if target has higher or equal level
     if not can_manage_role(adm, admin.get("role", "client")):
         raise HTTPException(403, "Vous ne pouvez pas modifier cet administrateur")
+    ensure_admin_country_scope(adm, admin)
+    if not is_primary_admin(adm) and not is_original_primary_admin(adm):
+        raise HTTPException(403, "Seuls les administrateurs principaux peuvent modifier les Fonctions")
+    if req.assigned_countries and set(req.assigned_countries) != {admin.get("country")}:
+        raise HTTPException(400, "Les permissions doivent rester limitées au pays de résidence")
     
     # Validate permissions being granted
     if req.permissions:
@@ -440,7 +465,7 @@ async def update_administrator_permissions(
     
     update_data = {
         "permissions": req.permissions,
-        "assigned_countries": req.assigned_countries,
+        "assigned_countries": [admin.get("country")],
         "can_create_roles": req.can_create_roles,
         "can_suspend_roles": req.can_suspend_roles,
         "permissions_updated_at": now_iso(),
@@ -479,6 +504,7 @@ async def suspend_administrator(
     
     # Use RBAC check
     check_can_suspend(adm, admin)
+    ensure_admin_country_scope(adm, admin)
     
     n = now_iso()
     await db.users.update_one({"id": admin_id}, {"$set": {
@@ -514,6 +540,7 @@ async def unsuspend_administrator(admin_id: str, adm=Depends(get_admin)):
     
     if not can_manage_role(adm, admin.get("role", "client")):
         raise HTTPException(403, "Vous ne pouvez pas réactiver cet administrateur")
+    ensure_admin_country_scope(adm, admin)
     
     n = now_iso()
     await db.users.update_one({"id": admin_id}, {"$set": {
@@ -543,7 +570,7 @@ async def unsuspend_administrator(admin_id: str, adm=Depends(get_admin)):
 @router.delete("/administrators/{admin_id}")
 async def delete_administrator(admin_id: str, adm=Depends(get_admin)):
     """Demote an administrator to client (soft delete)"""
-    check_permission(adm, "admins.delete")
+    check_function_management_access(adm, "admins.delete")
     
     admin = await db.users.find_one({"id": admin_id})
     if not admin:
@@ -555,6 +582,7 @@ async def delete_administrator(admin_id: str, adm=Depends(get_admin)):
     
     if not can_manage_role(adm, admin.get("role", "client")):
         raise HTTPException(403, "Vous ne pouvez pas supprimer cet administrateur")
+    ensure_admin_country_scope(adm, admin)
     
     # Demote to client
     n = now_iso()

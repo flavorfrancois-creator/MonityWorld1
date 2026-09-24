@@ -313,6 +313,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
 
   const availableRoles = myPermissions?.can_create_roles || [];
   const categories = permissionsData?.categories || {};
+  const canManageFunctions = myPermissions?.is_primary_admin || myPermissions?.is_original_primary;
 
   useEffect(() => {
     if (open) {
@@ -476,56 +477,38 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
               <div className="space-y-2"><label className="text-sm font-medium">Date de naissance *</label><Input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value }))} /></div>
               <div className="space-y-2"><label className="text-sm font-medium">Lieu de naissance *</label><Input value={form.place_of_birth} onChange={e => setForm(f => ({ ...f, place_of_birth: e.target.value }))} /></div>
               <div className="space-y-2"><label className="text-sm font-medium">Mot de passe *</label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} /></div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Rôle *</label>
-                <select
-                  value={form.role}
-                  onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md bg-secondary border border-border text-foreground"
-                >
-                  {availableRoles.map(role => (
-                    <option key={role} value={role}>
-                      {permissionsData?.roles?.[role]?.label || role}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Pays</label>
-                <select
-                  value={form.country}
-                  onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-md bg-secondary border border-border text-foreground"
-                >
-                  <option value="CD">RD Congo</option>
-                  <option value="CG">Congo Brazzaville</option>
-                  <option value="FR">France</option>
-                  <option value="BE">Belgique</option>
-                </select>
-              </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Pays accessibles</label>
-              <p className="text-xs text-muted-foreground mb-2">Laissez vide pour accès à tous les pays</p>
-              <div className="flex flex-wrap gap-2">
-                {['CD', 'CG', 'FR', 'BE', 'CM', 'SN', 'CI'].map(c => (
-                  <Button
-                    key={c}
-                    variant="outline"
-                    size="sm"
-                    className={form.assigned_countries.includes(c) ? 'bg-primary/10 border-primary' : ''}
-                    onClick={() => toggleCountry(c)}
-                  >
-                    {c}
-                  </Button>
-                ))}
-              </div>
+              <label className="text-sm font-medium">État de fonctionnement</label>
+              <p className="text-xs text-muted-foreground">
+                Cette Fonction est limitée au pays de résidence sélectionné : <strong>{form.country}</strong>.
+              </p>
             </div>
             )}
           </TabsContent>
 
           <TabsContent value="permissions" className="mt-4">
+            <div className="space-y-2 mb-5">
+              <label className="text-sm font-medium">Fonction *</label>
+              <select
+                value={form.role}
+                onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                className="w-full h-10 px-3 rounded-md bg-secondary border border-border text-foreground"
+                disabled={!canManageFunctions}
+              >
+                {availableRoles.map(role => (
+                  <option key={role} value={role}>
+                    {permissionsData?.roles?.[role]?.label || role}
+                  </option>
+                ))}
+              </select>
+              {!canManageFunctions && (
+                <p className="text-xs text-muted-foreground">
+                  Seuls les administrateurs principaux peuvent sélectionner et gérer une Fonction.
+                </p>
+              )}
+            </div>
             <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
               {Object.entries(categories).map(([catName, catData]) => (
                 <div key={catName} className="space-y-2">
@@ -553,10 +536,15 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
 
           <TabsContent value="roles" className="space-y-4 mt-4">
             <div className="space-y-3">
+              {!canManageFunctions && (
+                <p className="text-xs text-muted-foreground">
+                  La délégation de création, modification et suppression des Fonctions est réservée aux administrateurs principaux.
+                </p>
+              )}
               <div>
                 <h4 className="font-medium text-sm text-foreground mb-2">Peut créer les rôles suivants</h4>
                 <div className="flex flex-wrap gap-2">
-                  {['admin', 'manager', 'client'].map(role => (
+                  {canManageFunctions && ['admin', 'manager', 'client'].map(role => (
                     <Button
                       key={role}
                       variant="outline"
@@ -572,7 +560,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
               <div>
                 <h4 className="font-medium text-sm text-foreground mb-2">Peut suspendre les rôles suivants</h4>
                 <div className="flex flex-wrap gap-2">
-                  {['admin', 'manager', 'partner', 'client'].map(role => (
+                  {canManageFunctions && ['admin', 'manager', 'partner', 'client'].map(role => (
                     <Button
                       key={role}
                       variant="outline"

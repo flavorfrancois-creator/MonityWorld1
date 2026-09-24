@@ -183,7 +183,7 @@ ROLES = {
 # Which roles can create which other roles
 ROLE_CREATION_HIERARCHY = {
     "primary_admin": ["secondary_primary_admin", "admin", "manager", "partner", "client"],
-    "secondary_primary_admin": [],  # Defined by primary admin via can_create_roles
+    "secondary_primary_admin": ["admin", "manager", "client"],
     "admin": [],  # Defined by primary admin via can_create_roles
     "manager": [],  # Defined by primary admin via can_create_roles
 }
@@ -191,7 +191,7 @@ ROLE_CREATION_HIERARCHY = {
 # Which roles can suspend which other roles
 ROLE_SUSPENSION_HIERARCHY = {
     "primary_admin": ["secondary_primary_admin", "admin", "manager", "partner", "client"],
-    "secondary_primary_admin": [],  # Defined by primary admin via can_suspend_roles
+    "secondary_primary_admin": ["admin", "manager", "partner", "client"],
     "admin": [],  # Defined by primary admin via can_suspend_roles
     "manager": [],  # Defined by primary admin via can_suspend_roles
 }
