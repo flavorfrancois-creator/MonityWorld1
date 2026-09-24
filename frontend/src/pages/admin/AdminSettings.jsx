@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Settings, Shield, Globe, DollarSign, Bell, Save } from 'lucide-react';
+import { Settings, Shield, Globe, DollarSign, Bell, Save, ExternalLink } from 'lucide-react';
 
 export default function AdminSettings() {
   const [fees, setFees] = useState({ transfer: '1.0', withdrawal: '1.5', recharge: '0' });
@@ -93,6 +93,31 @@ export default function AdminSettings() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Security and API access */}
+      <div className="bg-card border border-border rounded-xl p-5 animate-fade-in-up stagger-4">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+            <Shield size={18} className="text-amber-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-foreground" style={{fontFamily:'Manrope'}}>Sécurité et accès API</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Accédez à la documentation technique du backend.</p>
+          </div>
+        </div>
+        <a
+          href="http://zdnpn3itddbf3hefabvbkxay.213.199.40.193.sslip.io/docs"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+        >
+          Documentation API backend
+          <ExternalLink size={15} />
+        </a>
+        <p className="text-xs text-muted-foreground mt-3">
+          Ne partagez pas les identifiants, jetons ou clés affichés dans les outils d’administration.
+        </p>
       </div>
 
       <Button className="w-full sm:w-auto btn-primary-glow h-11 px-8" onClick={handleSave} disabled={saving} data-testid="save-settings-btn">
