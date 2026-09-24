@@ -293,6 +293,8 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
     name: '',
     email: '',
     password: '',
+    date_of_birth: '',
+    place_of_birth: '',
     role: 'admin',
     country: 'CD',
     assigned_countries: [],
@@ -302,24 +304,70 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
   });
   const [processing, setProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
+  const [countries, setCountries] = useState([]);
+  const [registrationStep, setRegistrationStep] = useState(1);
+  const [verificationId, setVerificationId] = useState('');
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [emailOtp, setEmailOtp] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
 
   const availableRoles = myPermissions?.can_create_roles || [];
   const categories = permissionsData?.categories || {};
 
-  const handleSubmit = async () => {
-    if (!form.phone || !form.name || !form.password) {
-      toast.error('Veuillez remplir tous les champs obligatoires');
-      return;
+  useEffect(() => {
+    if (open) {
+      API.get('/countries/db').then(res => setCountries(res.data || [])).catch(() => toast.error('Impossible de charger les pays'));
     }
+  }, [open]);
+
+  const handleSubmit = async () => {
     setProcessing(true);
     try {
-      await API.post('/admin/administrators', form);
+      if (registrationStep === 1) {
+        if (!form.country || !form.phone || !form.email) {
+          toast.error('Pays, numéro de téléphone et adresse mail sont obligatoires');
+          return;
+        }
+        const result = await API.post('/admin/administrators/registration/start', {
+          country: form.country, phone: form.phone, email: form.email
+        });
+        setVerificationId(result.data.verification_id);
+        setRegistrationStep(2);
+        toast.success('Deux codes OTP ont été envoyés');
+        return;
+      }
+      if (registrationStep === 2) {
+        const result = await API.post('/admin/administrators/registration/verify', {
+          verification_id: verificationId, phone_otp: phoneOtp, email_otp: emailOtp
+        });
+        setVerificationToken(result.data.verification_token);
+        setRegistrationStep(3);
+        toast.success('Coordonnées confirmées');
+        return;
+      }
+      if (!form.name || !form.date_of_birth || !form.place_of_birth || !form.password) {
+        toast.error('Nom, date et lieu de naissance, et mot de passe sont obligatoires');
+        return;
+      }
+      await API.post('/admin/administrators/registration/complete', {
+        verification_token: verificationToken,
+        name: form.name,
+        date_of_birth: form.date_of_birth,
+        place_of_birth: form.place_of_birth,
+        password: form.password,
+        role: form.role,
+        assigned_countries: form.assigned_countries,
+        permissions: form.permissions,
+        can_create_roles: form.can_create_roles,
+        can_suspend_roles: form.can_suspend_roles
+      });
       toast.success('Administrateur créé avec succès');
       setForm({
-        phone: '', name: '', email: '', password: '',
+        phone: '', name: '', email: '', password: '', date_of_birth: '', place_of_birth: '',
         role: 'admin', country: 'CD', assigned_countries: [],
         permissions: [], can_create_roles: [], can_suspend_roles: []
       });
+      setRegistrationStep(1); setVerificationId(''); setPhoneOtp(''); setEmailOtp(''); setVerificationToken('');
       onSuccess();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur lors de la création');
@@ -385,9 +433,19 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
           </TabsList>
 
           <TabsContent value="info" className="space-y-4 mt-4">
+            {registrationStep < 3 && (
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Téléphone *</label>
+                <label className="text-sm font-medium">Pays de résidence *</label>
+                <select value={form.country} onChange={e => {
+                  const country = countries.find(c => c.code === e.target.value);
+                  setForm(f => ({ ...f, country: e.target.value, phone: country?.dial_code || '' }));
+                }} className="w-full h-10 px-3 rounded-md bg-secondary border border-border text-foreground">
+                  {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Numéro de téléphone *</label>
                 <Input
                   value={form.phone}
                   onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
@@ -395,15 +453,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nom complet *</label>
-                <Input
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Jean Dupont"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Email</label>
+                <label className="text-sm font-medium">Adresse mail *</label>
                 <Input
                   type="email"
                   value={form.email}
@@ -411,15 +461,21 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
                   placeholder="email@example.com"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Mot de passe *</label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  placeholder="••••••••"
-                />
+            </div>
+            )}
+            {registrationStep === 2 && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">Confirmez le code reçu par WhatsApp/SMS et celui reçu par email.</p>
+                <Input value={phoneOtp} onChange={e => setPhoneOtp(e.target.value)} placeholder="OTP téléphone" />
+                <Input value={emailOtp} onChange={e => setEmailOtp(e.target.value)} placeholder="OTP email" />
               </div>
+            )}
+            {registrationStep === 3 && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><label className="text-sm font-medium">Nom complet *</label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Date de naissance *</label><Input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value }))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Lieu de naissance *</label><Input value={form.place_of_birth} onChange={e => setForm(f => ({ ...f, place_of_birth: e.target.value }))} /></div>
+              <div className="space-y-2"><label className="text-sm font-medium">Mot de passe *</label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} /></div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Rôle *</label>
                 <select
@@ -466,6 +522,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
                 ))}
               </div>
             </div>
+            )}
           </TabsContent>
 
           <TabsContent value="permissions" className="mt-4">
@@ -499,7 +556,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
               <div>
                 <h4 className="font-medium text-sm text-foreground mb-2">Peut créer les rôles suivants</h4>
                 <div className="flex flex-wrap gap-2">
-                  {['admin', 'manager', 'merchant', 'client'].map(role => (
+                  {['admin', 'manager', 'client'].map(role => (
                     <Button
                       key={role}
                       variant="outline"
@@ -515,7 +572,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
               <div>
                 <h4 className="font-medium text-sm text-foreground mb-2">Peut suspendre les rôles suivants</h4>
                 <div className="flex flex-wrap gap-2">
-                  {['admin', 'manager', 'partner', 'merchant', 'client'].map(role => (
+                  {['admin', 'manager', 'partner', 'client'].map(role => (
                     <Button
                       key={role}
                       variant="outline"
@@ -538,7 +595,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
           </DialogClose>
           <Button onClick={handleSubmit} disabled={processing}>
             {processing ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Plus size={14} className="mr-2" />}
-            Créer
+            {registrationStep === 1 ? 'Envoyer les OTP' : registrationStep === 2 ? 'Confirmer les OTP' : 'Créer'}
           </Button>
         </DialogFooter>
       </DialogContent>

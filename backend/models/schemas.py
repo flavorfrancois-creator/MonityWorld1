@@ -722,6 +722,34 @@ class AdminCreateReqV2(BaseModel):
     permissions: List[str] = []
     can_create_roles: List[str] = []
     can_suspend_roles: List[str] = []
+    verification_token: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    place_of_birth: Optional[str] = None
+
+
+class AdminRegistrationStartReq(BaseModel):
+    country: str
+    phone: str
+    email: str
+
+
+class AdminRegistrationVerifyReq(BaseModel):
+    verification_id: str
+    phone_otp: str
+    email_otp: str
+
+
+class AdminRegistrationCompleteReq(BaseModel):
+    verification_token: str
+    name: str
+    date_of_birth: str
+    place_of_birth: str
+    password: str
+    role: str = "admin"
+    assigned_countries: List[str] = []
+    permissions: List[str] = []
+    can_create_roles: List[str] = []
+    can_suspend_roles: List[str] = []
 
 
 class AdminPermissionsUpdateReq(BaseModel):
@@ -808,5 +836,4 @@ class WhatsAppCloudApiTestReq(BaseModel):
 
 class GroupJoinBodyReq(BaseModel):
     invite_code: str
-
 

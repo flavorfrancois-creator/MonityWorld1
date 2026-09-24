@@ -7,6 +7,8 @@ import logging
 import random
 import string
 import secrets
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional, List
@@ -31,7 +33,11 @@ from rbac import (
     ROLES, can_access_country, can_suspend_user_by_type, check_can_suspend_user_by_type
 )
 from utils.auth import KYC_REQUIRED_OPERATIONS
-from models.schemas import AdminCreateReqV2, AdminPermissionsUpdateReq, AdminSuspendReq, UserSuspendReq
+from models.schemas import (
+    AdminCreateReqV2, AdminPermissionsUpdateReq, AdminSuspendReq, UserSuspendReq,
+    AdminRegistrationStartReq, AdminRegistrationVerifyReq, AdminRegistrationCompleteReq,
+)
+from utils.whatsapp import send_whatsapp_otp
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +55,116 @@ class ClientDepositReq(BaseModel):
     idempotency_key: Optional[str] = None
 
 # === ADVANCED ADMIN MANAGEMENT WITH RBAC ===
+
+def _send_admin_email_otp(email: str, otp: str):
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME")
+    password = os.getenv("SMTP_PASSWORD")
+    sender = os.getenv("SMTP_FROM", username)
+    if not all([host, username, password, sender]):
+        raise RuntimeError("SMTP is not configured for administrator email verification")
+    message = EmailMessage()
+    message["Subject"] = "Monity World - Code de confirmation administrateur"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(f"Votre code de confirmation administrateur est : {otp}\n\nCe code expire dans 10 minutes.")
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        smtp.starttls()
+        smtp.login(username, password)
+        smtp.send_message(message)
+
+
+@router.post("/administrators/registration/start")
+async def start_admin_registration(req: AdminRegistrationStartReq, adm=Depends(get_admin)):
+    check_permission(adm, "admins.create")
+    country = await db.countries.find_one({"code": req.country.upper()}, {"_id": 0})
+    if not country:
+        raise HTTPException(400, "Pays de résidence invalide")
+    dial_code = country.get("dial_code") or country.get("phone_prefix")
+    if dial_code and not req.phone.startswith(dial_code):
+        raise HTTPException(400, f"Le numéro doit commencer par {dial_code}")
+    if await db.users.find_one({"phone": req.phone}):
+        raise HTTPException(400, "Ce numéro de téléphone est déjà utilisé")
+    if await db.users.find_one({"email": req.email.lower().strip()}):
+        raise HTTPException(400, "Cette adresse mail est déjà utilisée")
+    phone_otp = str(random.randint(100000, 999999))
+    email_otp = str(random.randint(100000, 999999))
+    verification_id = secrets.token_urlsafe(24)
+    await db.admin_registration_verifications.insert_one({
+        "id": verification_id,
+        "country": req.country.upper(),
+        "phone": req.phone,
+        "email": req.email.lower().strip(),
+        "phone_otp": hash_pw(phone_otp),
+        "email_otp": hash_pw(email_otp),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+        "created_by": adm["id"],
+    })
+    try:
+        await send_whatsapp_otp(req.phone, phone_otp)
+        _send_admin_email_otp(req.email.lower().strip(), email_otp)
+    except Exception as exc:
+        await db.admin_registration_verifications.delete_one({"id": verification_id})
+        logger.error("Administrator OTP delivery failed: %s", exc)
+        raise HTTPException(503, "Impossible d'envoyer les codes OTP. Vérifiez la configuration WhatsApp et email.")
+    return {"verification_id": verification_id, "expires_in": 600}
+
+
+@router.post("/administrators/registration/verify")
+async def verify_admin_registration(req: AdminRegistrationVerifyReq, adm=Depends(get_admin)):
+    record = await db.admin_registration_verifications.find_one({"id": req.verification_id})
+    if not record or datetime.fromisoformat(record["expires_at"]) < datetime.now(timezone.utc):
+        raise HTTPException(400, "La vérification a expiré")
+    if not verify_pw(req.phone_otp, record["phone_otp"]) or not verify_pw(req.email_otp, record["email_otp"]):
+        raise HTTPException(400, "Code OTP incorrect")
+    token = secrets.token_urlsafe(32)
+    await db.admin_registration_verifications.update_one(
+        {"id": req.verification_id},
+        {"$set": {"verified": True, "verification_token": token}},
+    )
+    return {"verification_token": token}
+
+
+@router.post("/administrators/registration/complete")
+async def complete_admin_registration(req: AdminRegistrationCompleteReq, adm=Depends(get_admin)):
+    check_permission(adm, "admins.create")
+    record = await db.admin_registration_verifications.find_one({
+        "verification_token": req.verification_token,
+        "verified": True,
+    })
+    if not record:
+        raise HTTPException(400, "Vérification OTP requise")
+    if await db.users.find_one({"phone": record["phone"]}) or await db.users.find_one({"email": record["email"]}):
+        raise HTTPException(400, "Le téléphone ou l'adresse mail est déjà utilisé")
+    if len(req.password) < 8:
+        raise HTTPException(400, "Le mot de passe doit contenir au moins 8 caractères")
+    check_can_create_role(adm, req.role)
+    for permission in req.permissions:
+        if permission not in PERMISSIONS:
+            raise HTTPException(400, f"Permission invalide: {permission}")
+    uid = gen_id()
+    admin_data = get_default_admin_data()
+    admin_data.update({
+        "admin_level": None,
+        "permissions": req.permissions,
+        "assigned_countries": req.assigned_countries,
+        "can_create_roles": req.can_create_roles,
+        "can_suspend_roles": req.can_suspend_roles,
+        "created_by_admin_id": adm["id"],
+        "created_by_admin_name": adm.get("name"),
+    })
+    await db.users.insert_one({
+        "id": uid, "phone": record["phone"], "name": req.name.strip(),
+        "email": record["email"], "password": hash_pw(req.password),
+        "role": req.role, "country": record["country"], "language": "fr",
+        "is_active": True, "is_verified": True, "kyc_status": "pending",
+        "date_of_birth": req.date_of_birth, "place_of_birth": req.place_of_birth,
+        "account_number": gen_account(), "referral_code": gen_ref(req.name),
+        "created_at": now_iso(), **admin_data,
+    })
+    await db.admin_registration_verifications.delete_one({"id": record["id"]})
+    return {"message": "Administrateur créé avec succès", "user_id": uid}
 
 async def get_primary_admin(user=Depends(get_current_user)):
     """Check if user is primary admin (original or secondary)"""
@@ -813,4 +929,3 @@ async def search_clients_for_deposit(
         c["wallets"] = wallets
 
     return {"clients": clients, "count": len(clients)}
-
