@@ -112,8 +112,12 @@ export default function AuthPage() {
       
       const res = await API.post('/auth/login', payload);
       
-      // Check if 2FA is required
-      if (res.data.requires_2fa) {
+      // Registration was never confirmed by OTP - reuse the OTP modal to finish it
+      if (res.data.requires_otp_verification) {
+        setRegisteredPhone(res.data.phone);
+        setOtpModal(true);
+        toast.info(res.data.message || 'Veuillez confirmer votre compte avec le code OTP envoyé via WhatsApp');
+      } else if (res.data.requires_2fa) {
         setPendingLoginData(res.data);
         setShow2FAModal(true);
         toast.info('Un code OTP a été envoyé via WhatsApp');

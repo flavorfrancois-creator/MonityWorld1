@@ -1321,6 +1321,21 @@ async def login(req: LoginReq):
     
     if not user.get("is_active"): raise HTTPException(403, "Compte suspendu")
     
+    # Registration OTP was never completed - block login and re-send OTP
+    # instead of granting a session, so identity verification can't be skipped.
+    if not user.get("is_verified"):
+        otp = gen_otp()
+        await db.users.update_one({"id": user["id"]}, {"$set": {"otp": otp}})
+        try:
+            await send_whatsapp_otp(user.get("phone"), otp)
+        except Exception as e:
+            logger.error(f"Failed to resend registration OTP: {e}")
+        return {
+            "requires_otp_verification": True,
+            "phone": user.get("phone"),
+            "message": "Veuillez confirmer votre inscription avec le code OTP envoyé via WhatsApp"
+        }
+    
     # Check if 2FA is enabled
     if user.get("two_factor_enabled"):
         # Generate and send 2FA OTP

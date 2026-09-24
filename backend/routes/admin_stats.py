@@ -414,8 +414,9 @@ async def admin_kyc(uid: str, action: str, note: str = "", adm=Depends(get_admin
 
 
 @router.get("/admin/kyc/pending")
-async def admin_get_pending_kyc(page: int = 1, limit: int = 20, status: str = "submitted", adm=Depends(get_admin)):
-    """Get all users with pending KYC verification"""
+async def admin_get_pending_kyc(page: int = 1, limit: int = 20, status: str = "all", adm=Depends(get_admin)):
+    """Get all client users needing KYC attention (including brand new users who
+    registered but haven't submitted documents yet, so admins can track/follow up)."""
     skip = (page - 1) * limit
     
     # Build country filter based on admin access
@@ -423,11 +424,18 @@ async def admin_get_pending_kyc(page: int = 1, limit: int = 20, status: str = "s
     if country_filter.get("__forbidden__"):
         return {"users": [], "total": 0, "page": page}
     
-    # Filter by status (submitted, clarification_needed, or both)
+    # Filter by status. "all" (default) shows every client whose KYC isn't
+    # finalized yet - pending (just registered), incomplete (started upload),
+    # submitted, and clarification_needed - so new users are always visible.
     if status == "all":
+        q = {"kyc_status": {"$in": ["pending", "incomplete", "submitted", "clarification_needed"]}}
+    elif status == "submitted":
         q = {"kyc_status": {"$in": ["submitted", "clarification_needed"]}}
     else:
         q = {"kyc_status": status}
+    
+    # Only client accounts go through KYC
+    q["role"] = {"$nin": list(NON_CLIENT_ROLES)}
     
     if country_filter:
         q.update(country_filter)
@@ -436,7 +444,7 @@ async def admin_get_pending_kyc(page: int = 1, limit: int = 20, status: str = "s
     users = await db.users.find(
         q, 
         {"_id": 0, "password": 0, "otp": 0, "reset_token": 0}
-    ).sort("kyc_submitted_at", -1).skip(skip).limit(limit).to_list(limit)
+    ).sort([("kyc_submitted_at", -1), ("created_at", -1)]).skip(skip).limit(limit).to_list(limit)
     
     return {
         "users": users,
