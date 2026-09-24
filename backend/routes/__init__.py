@@ -11,7 +11,6 @@ Modules:
 - savings: Savings accounts
 - groups: Tontines/group savings
 - integrations: SMS OTP, Mobile Money integration
-- merchant: Merchant portal, invoices, POS
 """
 
 from .auth import router as auth_router, setup_auth_routes
@@ -21,7 +20,6 @@ from .cards import router as cards_router, setup_cards_routes
 from .savings import router as savings_router, setup_savings_routes
 from .groups import router as groups_router, setup_groups_routes
 from .integrations import router as integrations_router
-from .merchant import router as merchant_router, setup_merchant_routes
 
 __all__ = [
     # Auth
@@ -38,6 +36,4 @@ __all__ = [
     'groups_router', 'setup_groups_routes',
     # Integrations
     'integrations_router',
-    # Merchant
-    'merchant_router', 'setup_merchant_routes'
 ]

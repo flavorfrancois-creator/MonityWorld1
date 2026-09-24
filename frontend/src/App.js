@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
-import MerchantLayout from './components/MerchantLayout';
 import PartnerLayout from './components/PartnerLayout';
 import HelpButton from './components/HelpButton';
 import AuthPage from './pages/AuthPage';
@@ -50,13 +49,6 @@ import AdminNFCSubscriptions from './pages/admin/AdminNFCSubscriptions';
 import AdminApiIntegrations from './pages/admin/AdminApiIntegrations';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminClientDeposit from './pages/admin/AdminClientDeposit';
-import MerchantDashboard from './pages/merchant/MerchantDashboard';
-import MerchantProducts from './pages/merchant/MerchantProducts';
-import MerchantInvoices from './pages/merchant/MerchantInvoices';
-import MerchantPOS from './pages/merchant/MerchantPOS';
-import MerchantClients from './pages/merchant/MerchantClients';
-import MerchantTransactions from './pages/merchant/MerchantTransactions';
-import MerchantSettings from './pages/merchant/MerchantSettings';
 import PartnerLogin from './pages/partner/PartnerLogin';
 import PartnerDashboard from './pages/partner/PartnerDashboard';
 import PartnerRecharge from './pages/partner/PartnerRecharge';
@@ -86,18 +78,9 @@ function AdminRoute({ children }) {
   return children;
 }
 
-function MerchantRoute({ children }) {
-  const { isAuthenticated, loading, user } = useAuth();
-  if (loading) return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>;
-  if (!isAuthenticated) return <Navigate to="/" replace />;
-  if (user?.role !== 'merchant') return <Navigate to="/dashboard" replace />;
-  return children;
-}
-
 function AppRoutes() {
   const { isAuthenticated, user } = useAuth();
   const getRedirect = () => {
-    if (user?.role === 'merchant') return '/merchant';
     if (['admin', 'manager', 'primary_admin', 'secondary_primary_admin'].includes(user?.role)) return '/admin';
     return '/dashboard';
   };
@@ -147,14 +130,6 @@ function AppRoutes() {
       <Route path="/admin/nfc-subscriptions" element={<AdminRoute><AdminLayout><AdminNFCSubscriptions /></AdminLayout></AdminRoute>} />
       <Route path="/admin/api-integrations" element={<AdminRoute><AdminLayout><AdminApiIntegrations /></AdminLayout></AdminRoute>} />
       <Route path="/admin/settings" element={<AdminRoute><AdminLayout><AdminSettings /></AdminLayout></AdminRoute>} />
-      {/* Merchant Routes */}
-      <Route path="/merchant" element={<MerchantRoute><MerchantLayout><MerchantDashboard /></MerchantLayout></MerchantRoute>} />
-      <Route path="/merchant/pos" element={<MerchantRoute><MerchantLayout><MerchantPOS /></MerchantLayout></MerchantRoute>} />
-      <Route path="/merchant/products" element={<MerchantRoute><MerchantLayout><MerchantProducts /></MerchantLayout></MerchantRoute>} />
-      <Route path="/merchant/invoices" element={<MerchantRoute><MerchantLayout><MerchantInvoices /></MerchantLayout></MerchantRoute>} />
-      <Route path="/merchant/transactions" element={<MerchantRoute><MerchantLayout><MerchantTransactions /></MerchantLayout></MerchantRoute>} />
-      <Route path="/merchant/clients" element={<MerchantRoute><MerchantLayout><MerchantClients /></MerchantLayout></MerchantRoute>} />
-      <Route path="/merchant/settings" element={<MerchantRoute><MerchantLayout><MerchantSettings /></MerchantLayout></MerchantRoute>} />
       {/* Partner Routes */}
       <Route path="/partner/login" element={<PartnerLogin />} />
       <Route path="/partner" element={<PartnerLayout><PartnerDashboard /></PartnerLayout>} />

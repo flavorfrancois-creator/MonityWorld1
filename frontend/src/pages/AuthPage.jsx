@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Eye, EyeOff, Phone, Lock, User, Globe, ArrowRight, ShieldCheck, CreditCard, Store, Building, Mail, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Phone, Lock, User, Globe, ArrowRight, ShieldCheck, CreditCard, Mail, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
 
 // Default countries (will be loaded from API)
 const DEFAULT_COUNTRIES = [
@@ -28,14 +28,6 @@ const DEFAULT_COUNTRIES = [
   { code: 'TN', name: 'Tunisie', phone_prefix: '+216', default_currency: 'TND' },
   { code: 'KE', name: 'Kenya', phone_prefix: '+254', default_currency: 'KES' },
   { code: 'RW', name: 'Rwanda', phone_prefix: '+250', default_currency: 'RWF' },
-];
-
-const BUSINESS_TYPES = [
-  { value: 'restaurant', label: 'Restaurant / Café' },
-  { value: 'shop', label: 'Boutique / Commerce' },
-  { value: 'service', label: 'Services' },
-  { value: 'online', label: 'E-commerce' },
-  { value: 'other', label: 'Autre' }
 ];
 
 export default function AuthPage() {
@@ -67,12 +59,6 @@ export default function AuthPage() {
   });
   const [phonePrefix, setPhonePrefix] = useState('+243');
   const [showNfcField, setShowNfcField] = useState(false);
-  // Merchant Register state
-  const [merchantData, setMerchantData] = useState({ 
-    name: '', email: '', phone: '', password: '', country: 'CD', language: 'fr',
-    business_name: '', business_type: 'shop', business_address: ''
-  });
-  const [merchantPhonePrefix, setMerchantPhonePrefix] = useState('+243');
 
   // Load countries from API
   useEffect(() => {
@@ -134,9 +120,7 @@ export default function AuthPage() {
       } else {
         login(res.data.token, res.data.user);
         toast.success('Connexion réussie ! Bienvenue.');
-        const role = res.data.user?.role;
-        if (role === 'merchant') navigate('/merchant');
-        else navigate('/dashboard');
+        navigate('/dashboard');
       }
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Identifiants incorrects');
@@ -159,9 +143,7 @@ export default function AuthPage() {
       setShow2FAModal(false);
       setTwoFAOtp('');
       setPendingLoginData(null);
-      const role = res.data.user?.role;
-      if (role === 'merchant') navigate('/merchant');
-      else navigate('/dashboard');
+      navigate('/dashboard');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Code OTP incorrect');
     } finally { setLoading(false); }
@@ -197,9 +179,7 @@ export default function AuthPage() {
       const res = await API.post('/auth/verify-otp', { phone: registeredPhone, otp: otpValue });
       login(res.data.token, res.data.user);
       toast.success('Compte vérifié avec succès !');
-      const role = res.data.user?.role;
-      if (role === 'merchant') navigate('/merchant');
-      else navigate('/dashboard');
+      navigate('/dashboard');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'OTP incorrect');
     } finally { setLoading(false); }
@@ -218,32 +198,6 @@ export default function AuthPage() {
       toast.success('Lien de réinitialisation envoyé par email et WhatsApp !');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur lors de l\'envoi');
-    } finally { setLoading(false); }
-  };
-
-  const handleMerchantRegister = async (e) => {
-    e.preventDefault();
-    if (!merchantData.name || !merchantData.phone || !merchantData.password || !merchantData.business_name) { 
-      toast.error('Remplissez tous les champs obligatoires'); return; 
-    }
-    if (merchantData.password.length < 6) { toast.error('Mot de passe minimum 6 caractères'); return; }
-    
-    // Build full phone number with prefix
-    const fullPhone = merchantData.phone.startsWith('+') ? merchantData.phone : merchantPhonePrefix + merchantData.phone.replace(/^0+/, '');
-    
-    setLoading(true);
-    try {
-      const payload = { ...merchantData, phone: fullPhone };
-      await API.post('/merchant/register', payload);
-      setRegisteredPhone(fullPhone);
-      setOtpModal(true);
-      toast.success('Compte marchand créé ! Connectez-vous maintenant.');
-      // Auto-login after merchant registration
-      const loginRes = await API.post('/auth/login', { phone: fullPhone, password: merchantData.password });
-      login(loginRes.data.token, loginRes.data.user);
-      navigate('/merchant');
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Erreur lors de l\'inscription');
     } finally { setLoading(false); }
   };
 
@@ -479,16 +433,12 @@ export default function AuthPage() {
         {/* Auth Card */}
         <div className="glass rounded-2xl p-6 animate-fade-in-up stagger-1">
           <Tabs defaultValue="login">
-            <TabsList className="w-full mb-6 bg-secondary/50 grid grid-cols-3">
+            <TabsList className="w-full mb-6 bg-secondary/50 grid grid-cols-2">
               <TabsTrigger value="login" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" data-testid="login-tab">
                 Connexion
               </TabsTrigger>
               <TabsTrigger value="register" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" data-testid="register-tab">
                 Inscription
-              </TabsTrigger>
-              <TabsTrigger value="merchant" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white" data-testid="merchant-tab">
-                <Store size={14} className="mr-1" />
-                Marchand
               </TabsTrigger>
             </TabsList>
 
@@ -665,108 +615,6 @@ export default function AuthPage() {
               </form>
             </TabsContent>
 
-            {/* MERCHANT REGISTER */}
-            <TabsContent value="merchant">
-              <form onSubmit={handleMerchantRegister} className="space-y-4">
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mb-4">
-                  <p className="text-xs text-emerald-400 font-medium">Compte Business</p>
-                  <p className="text-xs text-muted-foreground mt-1">Acceptez les paiements, créez des factures et gérez vos ventes</p>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">Nom complet *</Label>
-                  <div className="relative">
-                    <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={merchantData.name} onChange={e => setMerchantData({...merchantData, name: e.target.value})} placeholder="Jean Dupont" className="pl-10 h-11" />
-                  </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">Email (optionnel)</Label>
-                  <div className="relative">
-                    <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input type="email" value={merchantData.email} onChange={e => setMerchantData({...merchantData, email: e.target.value})} placeholder="email@exemple.com" className="pl-10 h-11" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">Nom de l'entreprise *</Label>
-                  <div className="relative">
-                    <Building size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={merchantData.business_name} onChange={e => setMerchantData({...merchantData, business_name: e.target.value})} placeholder="Ma Boutique" className="pl-10 h-11" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-sm text-muted-foreground">Type d'activité</Label>
-                    <Select value={merchantData.business_type} onValueChange={v => setMerchantData({...merchantData, business_type: v})}>
-                      <SelectTrigger className="h-11">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {BUSINESS_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm text-muted-foreground">Pays *</Label>
-                    <Select 
-                      value={merchantData.country} 
-                      onValueChange={v => handleCountryChange(v, setMerchantData, setMerchantPhonePrefix)}
-                    >
-                      <SelectTrigger className="h-11">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countries.map(c => (
-                          <SelectItem key={c.code} value={c.code}>
-                            {c.name} ({c.phone_prefix})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">Téléphone *</Label>
-                  <div className="flex gap-2">
-                    <div className="w-24 shrink-0">
-                      <Input 
-                        value={merchantPhonePrefix} 
-                        disabled 
-                        className="h-11 text-center bg-secondary/50 font-mono"
-                      />
-                    </div>
-                    <div className="relative flex-1">
-                      <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                      <Input 
-                        value={merchantData.phone} 
-                        onChange={e => setMerchantData({...merchantData, phone: e.target.value.replace(/\D/g, '')})} 
-                        placeholder="XXX XXX XXX" 
-                        className="pl-10 h-11" 
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">Mot de passe *</Label>
-                  <div className="relative">
-                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input type={showPwd ? 'text' : 'password'} value={merchantData.password} onChange={e => setMerchantData({...merchantData, password: e.target.value})} placeholder="Min. 6 caractères" className="pl-10 pr-10 h-11" />
-                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowPwd(!showPwd)}>
-                      {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <Button type="submit" className="w-full h-11 bg-emerald-500 hover:bg-emerald-600 font-medium" disabled={loading}>
-                  {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Store size={16} className="mr-2" /><span>Créer mon compte marchand</span></>}
-                </Button>
-              </form>
-            </TabsContent>
           </Tabs>
         </div>
 

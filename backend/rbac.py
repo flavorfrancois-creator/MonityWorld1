@@ -172,14 +172,6 @@ ROLES = {
         "can_be_deleted": True,
         "default_permissions": [],
     },
-    "merchant": {
-        "label": "Marchand",
-        "level": 5,
-        "is_primary": False,
-        "can_be_suspended": True,
-        "can_be_deleted": True,
-        "default_permissions": [],
-    },
     "client": {
         "label": "Client",
         "level": 6,
@@ -192,7 +184,7 @@ ROLES = {
 
 # Which roles can create which other roles
 ROLE_CREATION_HIERARCHY = {
-    "primary_admin": ["secondary_primary_admin", "admin", "manager", "partner", "merchant", "client"],
+    "primary_admin": ["secondary_primary_admin", "admin", "manager", "partner", "client"],
     "secondary_primary_admin": [],  # Defined by primary admin via can_create_roles
     "admin": [],  # Defined by primary admin via can_create_roles
     "manager": [],  # Defined by primary admin via can_create_roles
@@ -200,7 +192,7 @@ ROLE_CREATION_HIERARCHY = {
 
 # Which roles can suspend which other roles
 ROLE_SUSPENSION_HIERARCHY = {
-    "primary_admin": ["secondary_primary_admin", "admin", "manager", "partner", "merchant", "client"],
+    "primary_admin": ["secondary_primary_admin", "admin", "manager", "partner", "client"],
     "secondary_primary_admin": [],  # Defined by primary admin via can_suspend_roles
     "admin": [],  # Defined by primary admin via can_suspend_roles
     "manager": [],  # Defined by primary admin via can_suspend_roles

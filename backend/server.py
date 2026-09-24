@@ -1952,7 +1952,7 @@ async def get_biometric_settings(adm=Depends(get_admin)):
     return {
         "enabled": settings.get("enabled", True) if settings else True,
         "require_for_roles": settings.get("require_for_roles", []) if settings else [],
-        "available_roles": ["admin", "secondary_primary_admin", "manager", "merchant"]
+        "available_roles": ["admin", "secondary_primary_admin", "manager"]
     }
 
 
@@ -5123,18 +5123,6 @@ from routes.admin_rules import router as admin_rules_router
 from routes.admin_stats import router as admin_stats_router
 from routes.admin_countries import router as admin_countries_router
 from routes.mobile_compat import router as mobile_compat_router
-from routes.merchant import router as merchant_router, setup_merchant_routes
-
-setup_merchant_routes(
-    db,
-    get_current_user,
-    hash_pw,
-    verify_pw,
-    create_token,
-    gen_account,
-    gen_ref,
-    get_country_config,
-)
 
 app.include_router(admin_whatsapp_router)
 app.include_router(partner_routes_router)
@@ -5148,7 +5136,6 @@ app.include_router(admin_rules_router)
 app.include_router(admin_stats_router)
 app.include_router(admin_countries_router)
 app.include_router(mobile_compat_router)
-app.include_router(merchant_router)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','), allow_methods=["*"], allow_headers=["*"])
 
@@ -5268,6 +5255,22 @@ COUNTRIES_SEED = [
 
 @app.on_event("startup")
 async def startup():
+    # Merchant functionality now lives in the independent merchant1 app.
+    # Remove legacy merchant records and collections from this application.
+    merchant_users = await db.users.find({"role": "merchant"}, {"id": 1, "_id": 0}).to_list(10000)
+    merchant_ids = [user["id"] for user in merchant_users]
+    if merchant_ids:
+        await db.users.delete_many({"id": {"$in": merchant_ids}})
+        await db.merchants.delete_many({"user_id": {"$in": merchant_ids}})
+        await db.merchant_transactions.delete_many({"merchant_id": {"$in": merchant_ids}})
+        await db.invoices.delete_many({"merchant_id": {"$in": merchant_ids}})
+        await db.products.delete_many({"merchant_id": {"$in": merchant_ids}})
+    else:
+        await db.merchants.delete_many({})
+        await db.merchant_transactions.delete_many({})
+        await db.invoices.delete_many({})
+        await db.products.delete_many({})
+
     # Init object storage
     try:
         from utils.storage import init_storage
