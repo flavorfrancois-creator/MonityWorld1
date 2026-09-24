@@ -23,7 +23,6 @@ PERMISSIONS = {
     
     # Granular Suspension Permissions (by user type)
     "clients.suspend": "Suspendre les clients",
-    "merchants.suspend": "Suspendre les marchands",
     "partners.suspend_user": "Suspendre les partenaires (utilisateurs)",
     
     # Client Deposit (for managers)
@@ -102,11 +101,10 @@ PERMISSIONS = {
 
 # Permission groups for easier assignment
 PERMISSION_GROUPS = {
-    "users_full": ["users.view", "users.create", "users.edit", "users.suspend", "users.delete", "users.promote", "clients.suspend", "merchants.suspend", "partners.suspend_user"],
+    "users_full": ["users.view", "users.create", "users.edit", "users.suspend", "users.delete", "users.promote", "clients.suspend", "partners.suspend_user"],
     "users_basic": ["users.view"],
     "users_suspend_clients": ["users.view", "clients.suspend"],
-    "users_suspend_merchants": ["users.view", "merchants.suspend"],
-    "users_suspend_all": ["users.view", "clients.suspend", "merchants.suspend", "partners.suspend_user"],
+    "users_suspend_all": ["users.view", "clients.suspend", "partners.suspend_user"],
     "clients_deposit": ["clients.deposit"],
     "transactions_full": ["transactions.view", "transactions.approve", "transactions.reject", "transactions.export"],
     "transactions_basic": ["transactions.view"],
@@ -404,8 +402,7 @@ def check_can_suspend(actor: dict, target: dict):
 
 def can_suspend_user_by_type(actor: dict, target_role: str) -> bool:
     """
-    Check if actor can suspend a user of a specific type (client, merchant, partner).
-    Uses granular permissions like 'clients.suspend', 'merchants.suspend', etc.
+    Check if actor can suspend a user of a specific type.
     """
     # Original primary admin can suspend anyone
     if is_original_primary_admin(actor):
@@ -418,8 +415,6 @@ def can_suspend_user_by_type(actor: dict, target_role: str) -> bool:
     # Check specific suspension permissions based on user type
     if target_role == "client":
         return has_permission(actor, "clients.suspend")
-    elif target_role == "merchant":
-        return has_permission(actor, "merchants.suspend")
     elif target_role == "partner":
         return has_permission(actor, "partners.suspend_user")
     

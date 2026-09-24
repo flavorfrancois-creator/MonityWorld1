@@ -15,7 +15,7 @@ import {
   Crown, UserPlus, AlertTriangle, X, RotateCw
 } from 'lucide-react';
 
-const ROLES = ['client', 'merchant', 'manager', 'admin'];
+const ROLES = ['client', 'manager', 'admin'];
 const KYC_STATUSES = { 
   pending: 'En attente', 
   incomplete: 'Incomplet',
