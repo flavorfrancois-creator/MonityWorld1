@@ -5,7 +5,6 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { Badge } from '../../components/ui/badge';
-import { Checkbox } from '../../components/ui/checkbox';
 import { Search, Globe, DollarSign, Check, X, Loader2 } from 'lucide-react';
 
 export default function AdminCountryCurrencies() {
@@ -40,24 +39,22 @@ export default function AdminCountryCurrencies() {
     setSelectedCountry(country);
     try {
       const res = await API.get(`/admin/countries/${country.code}/currencies`);
-      setSelectedCurrencies(res.data.accepted_currencies || []);
+      const current = res.data.accepted_currencies || [];
+      // Only the country's own default currency is kept as the single selection.
+      setSelectedCurrencies(current.length ? [current[0]] : []);
       setShowModal(true);
     } catch (e) {
       toast.error('Erreur');
     }
   };
 
-  const toggleCurrency = (code) => {
-    setSelectedCurrencies(prev => 
-      prev.includes(code) 
-        ? prev.filter(c => c !== code)
-        : [...prev, code]
-    );
+  const selectCurrency = (code) => {
+    setSelectedCurrencies([code]);
   };
 
   const saveCurrencies = async () => {
     if (selectedCurrencies.length === 0) {
-      toast.error('Sélectionnez au moins une devise');
+      toast.error('Sélectionnez une devise');
       return;
     }
     setSaving(true);
@@ -96,7 +93,7 @@ export default function AdminCountryCurrencies() {
           Devises par Pays
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Configurer les devises acceptées dans chaque pays
+          Devise par défaut de chaque pays (une seule devise par pays)
         </p>
       </div>
 
@@ -125,6 +122,7 @@ export default function AdminCountryCurrencies() {
           </div>
         ) : filteredCountries.map(country => {
           const currencies = country.accepted_currencies || ['USD'];
+          const mainCurrency = currencies[0];
           return (
             <div 
               key={country.code}
@@ -142,16 +140,9 @@ export default function AdminCountryCurrencies() {
               </div>
               
               <div className="flex flex-wrap gap-1.5">
-                {currencies.slice(0, 4).map(cur => (
-                  <Badge key={cur} variant="secondary" className="text-xs">
-                    {cur}
-                  </Badge>
-                ))}
-                {currencies.length > 4 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{currencies.length - 4}
-                  </Badge>
-                )}
+                <Badge variant="secondary" className="text-xs">
+                  {mainCurrency}
+                </Badge>
               </div>
             </div>
           );
@@ -167,7 +158,7 @@ export default function AdminCountryCurrencies() {
               {selectedCountry?.name}
             </DialogTitle>
             <DialogDescription>
-              Sélectionnez les devises acceptées pour ce pays
+              Sélectionnez la devise par défaut de ce pays
             </DialogDescription>
           </DialogHeader>
           
@@ -177,14 +168,16 @@ export default function AdminCountryCurrencies() {
               return (
                 <div
                   key={currency.code}
-                  onClick={() => toggleCurrency(currency.code)}
+                  onClick={() => selectCurrency(currency.code)}
                   className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
                     isSelected 
                       ? 'border-primary bg-primary/10' 
                       : 'border-border hover:border-primary/30'
                   }`}
                 >
-                  <Checkbox checked={isSelected} />
+                  <span className={`h-4 w-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-primary' : 'border-muted-foreground'}`}>
+                    {isSelected && <span className="h-2 w-2 rounded-full bg-primary" />}
+                  </span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground">{currency.code}</span>
@@ -200,7 +193,7 @@ export default function AdminCountryCurrencies() {
           
           <div className="flex items-center justify-between pt-4 border-t border-border">
             <p className="text-sm text-muted-foreground">
-              {selectedCurrencies.length} devise(s) sélectionnée(s)
+              {selectedCurrencies.length ? `Devise : ${selectedCurrencies[0]}` : 'Aucune devise sélectionnée'}
             </p>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setShowModal(false)}>

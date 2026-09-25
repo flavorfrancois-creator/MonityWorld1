@@ -5387,6 +5387,22 @@ async def startup():
         if not await db.countries.find_one({"code": country["code"]}):
             await db.countries.insert_one({"id": gen_id(), "is_active": True, "created_at": now_iso(), **country})
 
+    # One-time migration: some states had been configured with two accepted
+    # currencies (their own + a secondary one, e.g. USD/EUR). Reset every
+    # country back to its own single default currency. Runs only once per
+    # country (flagged), so an admin's later manual choice isn't overwritten.
+    countries_to_fix = await db.countries.find({"currencies_normalized_v1": {"$ne": True}}, {"_id": 0}).to_list(500)
+    for country in countries_to_fix:
+        own_currency = country.get("currency_code") or get_country_config(country["code"]).get("default_currency", "USD")
+        await db.countries.update_one(
+            {"code": country["code"]},
+            {"$set": {
+                "accepted_currencies": [own_currency],
+                "currencies_normalized_v1": True,
+                "currencies_updated_at": now_iso()
+            }}
+        )
+
     if not await db.users.find_one({"role": "admin"}):
         aid = gen_id()
         await db.users.insert_one({

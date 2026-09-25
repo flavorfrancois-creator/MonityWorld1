@@ -292,9 +292,10 @@ async def get_country_currencies(country_code: str, adm=Depends(get_admin)):
     # Get all available currencies
     all_currencies = await db.currencies.find({"is_active": True}, {"_id": 0}).to_list(100)
     
+    own_currency = country.get("currency_code") or (get_country_config(country["code"]).get("default_currency", "USD") if get_country_config else "USD")
     return {
         "country": country,
-        "accepted_currencies": country.get("accepted_currencies", [country.get("default_currency", "USD")]),
+        "accepted_currencies": country.get("accepted_currencies", [own_currency]),
         "all_currencies": all_currencies
     }
 
@@ -326,7 +327,7 @@ async def get_public_country_currencies(country_code: str):
     if not country:
         return {"currencies": ["USD", "EUR"]}
     
-    currencies = country.get("accepted_currencies", [country.get("default_currency", "USD")])
+    currencies = country.get("accepted_currencies", [country.get("currency_code") or "USD"])
     
     currency_details = await db.currencies.find(
         {"code": {"$in": currencies}, "is_active": True}, 
