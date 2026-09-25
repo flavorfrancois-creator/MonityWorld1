@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { HelpCircle, X, ChevronRight, ExternalLink } from 'lucide-react';
 import { Button } from './ui/button';
+import { useAuth } from '../context/AuthContext';
+
+// Converts a 2-letter ISO country code (e.g. "CD") into its flag emoji.
+function countryCodeToFlag(code) {
+  if (!code || typeof code !== 'string' || code.length !== 2) return null;
+  const codePoints = code
+    .toUpperCase()
+    .split('')
+    .map((c) => 127397 + c.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
 
 // Help content for each page/section
 const HELP_CONTENT = {
@@ -131,6 +142,8 @@ const DEFAULT_HELP = {
 export default function HelpButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [expandedSection, setExpandedSection] = useState(null);
+  const { user } = useAuth();
+  const countryFlag = countryCodeToFlag(user?.country);
   
   // Get current path and find matching help content
   const currentPath = window.location.pathname;
@@ -140,17 +153,28 @@ export default function HelpButton() {
 
   return (
     <>
-      {/* Help Button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setIsOpen(true)}
-        className="fixed top-4 right-4 z-40 bg-card/80 backdrop-blur-sm border border-border hover:bg-primary/10 hover:border-primary/50 transition-all"
-        data-testid="help-button"
-      >
-        <HelpCircle size={18} className="text-primary" />
-        <span className="ml-2 text-sm hidden sm:inline">Aide</span>
-      </Button>
+      {/* Country flag + Help Button */}
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+        {countryFlag && (
+          <div
+            title={user?.country}
+            data-testid="user-country-flag"
+            className="bg-card/80 backdrop-blur-sm border border-border rounded-lg h-9 w-9 flex items-center justify-center text-xl leading-none"
+          >
+            {countryFlag}
+          </div>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsOpen(true)}
+          className="bg-card/80 backdrop-blur-sm border border-border hover:bg-primary/10 hover:border-primary/50 transition-all"
+          data-testid="help-button"
+        >
+          <HelpCircle size={18} className="text-primary" />
+          <span className="ml-2 text-sm hidden sm:inline">Aide</span>
+        </Button>
+      </div>
 
       {/* Help Modal */}
       {isOpen && (
