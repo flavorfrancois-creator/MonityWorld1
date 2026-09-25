@@ -11,3 +11,5 @@ whatsapp-service/.wa_sessions/
 whatsapp-service/.wwebjs_sessions/
 whatsapp-service/.wwebjs_auth/
 *.zip
+
+merchant1/
