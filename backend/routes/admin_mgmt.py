@@ -69,23 +69,11 @@ class ClientDepositReq(BaseModel):
 
 # === ADVANCED ADMIN MANAGEMENT WITH RBAC ===
 
-def _send_admin_email_otp(email: str, otp: str):
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    username = os.getenv("SMTP_USERNAME")
-    password = os.getenv("SMTP_PASSWORD")
-    sender = os.getenv("SMTP_FROM", username)
-    if not all([host, username, password, sender]):
-        raise RuntimeError("SMTP is not configured for administrator email verification")
-    message = EmailMessage()
-    message["Subject"] = "Monity World - Code de confirmation administrateur"
-    message["From"] = sender
-    message["To"] = email
-    message.set_content(f"Votre code de confirmation administrateur est : {otp}\n\nCe code expire dans 10 minutes.")
-    with smtplib.SMTP(host, port, timeout=15) as smtp:
-        smtp.starttls()
-        smtp.login(username, password)
-        smtp.send_message(message)
+async def _send_admin_email_otp(email: str, otp: str, country_code: str = None):
+    from utils.email import send_email
+    subject = "Monity World - Code de confirmation administrateur"
+    body = f"Votre code de confirmation administrateur est : {otp}\n\nCe code expire dans 10 minutes."
+    await send_email(email, subject, body, country_code)
 
 
 @router.post("/administrators/registration/start")
@@ -116,7 +104,7 @@ async def start_admin_registration(req: AdminRegistrationStartReq, adm=Depends(g
     })
     try:
         await send_whatsapp_otp(req.phone, phone_otp)
-        _send_admin_email_otp(req.email.lower().strip(), email_otp)
+        await _send_admin_email_otp(req.email.lower().strip(), email_otp, req.country)
     except Exception as exc:
         await db.admin_registration_verifications.delete_one({"id": verification_id})
         logger.error("Administrator OTP delivery failed: %s", exc)

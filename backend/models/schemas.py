@@ -572,6 +572,31 @@ class SmsTestReq(BaseModel):
     message: str
 
 
+class SmtpConfigReq(BaseModel):
+    """Configuration for an SMTP server used to send password-reset links and OTP emails"""
+    provider_name: str  # Display name, e.g. "Gmail principal", "SendGrid RDC"
+    provider_code: str  # Unique code, e.g. GMAIL_MAIN, SENDGRID_CD
+    host: str
+    port: int = 587
+    username: str
+    password: Optional[str] = None  # Left blank on edit to keep the existing stored password
+    from_email: str
+    from_name: str = "Monity World"
+    use_tls: bool = True
+    countries: List[str] = []  # Country codes this connection serves; empty = all states
+    is_all_states: bool = False  # Explicit "for all states" fallback connection
+    is_active: bool = True
+    is_default: bool = False
+    priority: int = 1  # Lower number = higher priority when multiple configs match
+
+
+class SmtpTestReq(BaseModel):
+    """Test SMTP send request"""
+    provider_code: str
+    to_email: str
+    message: Optional[str] = None
+
+
 class AdminActivityLogReq(BaseModel):
     """Request model for filtering activity logs"""
     admin_id: Optional[str] = None

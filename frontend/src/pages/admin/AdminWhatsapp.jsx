@@ -107,17 +107,41 @@ export default function AdminWhatsapp() {
   const [smsTestMessage, setSmsTestMessage] = useState('Test SMS depuis Monity World');
   const [smsTesting, setSmsTesting] = useState(false);
 
+  // SMTP email connections state
+  const [smtpConfigs, setSmtpConfigs] = useState([]);
+  const [showSmtpModal, setShowSmtpModal] = useState(false);
+  const [selectedSmtpConfig, setSelectedSmtpConfig] = useState(null);
+  const [smtpForm, setSmtpForm] = useState({
+    provider_name: '',
+    provider_code: '',
+    host: '',
+    port: 587,
+    username: '',
+    password: '',
+    from_email: '',
+    from_name: 'Monity World',
+    use_tls: true,
+    countries: [],
+    is_all_states: false,
+    is_active: true,
+    is_default: false,
+    priority: 1
+  });
+  const [smtpTestEmail, setSmtpTestEmail] = useState('');
+  const [smtpTesting, setSmtpTesting] = useState(false);
+
   // Fetch data
   const fetchData = useCallback(async () => {
     try {
-      const [configsRes, templatesRes, countriesRes, statsRes, scraperCountriesRes, smsProvidersRes, availableProvidersRes] = await Promise.all([
+      const [configsRes, templatesRes, countriesRes, statsRes, scraperCountriesRes, smsProvidersRes, availableProvidersRes, smtpConfigsRes] = await Promise.all([
         API.get('/admin/whatsapp/configs'),
         API.get('/admin/whatsapp/otp-templates'),
         API.get('/admin/countries'),
         API.get('/admin/whatsapp/stats').catch(() => ({ data: null })),
         API.get('/admin/whatsapp/scraper-countries').catch(() => ({ data: { countries: [] } })),
         API.get('/admin/sms-providers').catch(() => ({ data: { providers: [] } })),
-        API.get('/admin/sms-providers/available').catch(() => ({ data: { internal_providers: [], external_providers: [] } }))
+        API.get('/admin/sms-providers/available').catch(() => ({ data: { internal_providers: [], external_providers: [] } })),
+        API.get('/admin/smtp-configs').catch(() => ({ data: { configs: [] } }))
       ]);
       setConfigs(configsRes.data.configs || []);
       setTemplates(templatesRes.data.templates || []);
@@ -128,6 +152,7 @@ export default function AdminWhatsapp() {
       }
       setSmsProviders(smsProvidersRes.data.providers || []);
       setAvailableProviders(availableProvidersRes.data || { internal_providers: [], external_providers: [] });
+      setSmtpConfigs(smtpConfigsRes.data.configs || []);
     } catch (err) {
       if (err.response?.status === 403) {
         toast.error('Accès réservé à l\'administrateur principal');
@@ -657,6 +682,101 @@ export default function AdminWhatsapp() {
     }
   };
 
+  // === SMTP EMAIL CONNECTIONS ===
+  const resetSmtpForm = () => {
+    setSmtpForm({
+      provider_name: '',
+      provider_code: '',
+      host: '',
+      port: 587,
+      username: '',
+      password: '',
+      from_email: '',
+      from_name: 'Monity World',
+      use_tls: true,
+      countries: [],
+      is_all_states: false,
+      is_active: true,
+      is_default: false,
+      priority: 1
+    });
+    setSelectedSmtpConfig(null);
+  };
+
+  const handleSaveSmtpConfig = async () => {
+    if (!smtpForm.provider_code || !smtpForm.provider_name || !smtpForm.host || !smtpForm.username || !smtpForm.from_email) {
+      toast.error('Veuillez remplir les champs requis');
+      return;
+    }
+    if (!selectedSmtpConfig && !smtpForm.password) {
+      toast.error('Le mot de passe est requis pour une nouvelle connexion');
+      return;
+    }
+
+    try {
+      await API.post('/admin/smtp-configs', smtpForm);
+      toast.success('Connexion SMTP configuree');
+      setShowSmtpModal(false);
+      resetSmtpForm();
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Erreur');
+    }
+  };
+
+  const handleDeleteSmtpConfig = async (providerCode) => {
+    if (!window.confirm('Supprimer cette connexion SMTP ?')) return;
+
+    try {
+      await API.delete(`/admin/smtp-configs/${providerCode}`);
+      toast.success('Connexion supprimee');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Erreur');
+    }
+  };
+
+  const handleEditSmtpConfig = (config) => {
+    setSelectedSmtpConfig(config);
+    setSmtpForm({
+      provider_name: config.provider_name,
+      provider_code: config.provider_code,
+      host: config.host || '',
+      port: config.port || 587,
+      username: config.username || '',
+      password: '',
+      from_email: config.from_email || '',
+      from_name: config.from_name || 'Monity World',
+      use_tls: config.use_tls ?? true,
+      countries: config.countries || [],
+      is_all_states: config.is_all_states || false,
+      is_active: config.is_active ?? true,
+      is_default: config.is_default || false,
+      priority: config.priority || 1
+    });
+    setShowSmtpModal(true);
+  };
+
+  const handleTestSmtpConfig = async (config) => {
+    if (!smtpTestEmail) {
+      toast.error('Entrez une adresse mail de test');
+      return;
+    }
+
+    setSmtpTesting(true);
+    try {
+      const res = await API.post(`/admin/smtp-configs/${config.provider_code}/test`, {
+        provider_code: config.provider_code,
+        to_email: smtpTestEmail
+      });
+      toast.success(res.data.message);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Erreur');
+    } finally {
+      setSmtpTesting(false);
+    }
+  };
+
   // Get status badge
   const getStatusBadge = (status, method) => {
     switch (status) {
@@ -696,6 +816,9 @@ export default function AdminWhatsapp() {
           <p className="text-sm text-muted-foreground mt-1">Configurez les connexions et les API SMS pour les OTP et notifications</p>
         </div>
         <div className="flex gap-2">
+          <Button onClick={() => { resetSmtpForm(); setShowSmtpModal(true); }} variant="outline" data-testid="add-smtp-btn">
+            <Send size={16} className="mr-2" /> Ajouter SMTP
+          </Button>
           <Button onClick={() => { resetSmsForm(); setShowSmsModal(true); }} variant="outline" data-testid="add-sms-api-btn">
             <MessageSquare size={16} className="mr-2" /> Ajouter API SMS
           </Button>
@@ -766,6 +889,9 @@ export default function AdminWhatsapp() {
           </TabsTrigger>
           <TabsTrigger value="sms" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             <Smartphone size={16} className="mr-2" /> API SMS ({smsProviders.length})
+          </TabsTrigger>
+          <TabsTrigger value="smtp" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <Send size={16} className="mr-2" /> SMTP Email ({smtpConfigs.length})
           </TabsTrigger>
           <TabsTrigger value="templates" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             <Settings size={16} className="mr-2" /> Templates OTP
@@ -878,6 +1004,90 @@ export default function AdminWhatsapp() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* SMTP Email Connections Tab */}
+        <TabsContent value="smtp" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Configurez des serveurs SMTP pour envoyer les liens de réinitialisation de mot de passe et les OTP par email. Vous pouvez ajouter plusieurs connexions, une par pays ou une connexion "pour tous les états" utilisée en secours si celle du pays n'est pas disponible.</p>
+            <Button onClick={() => { resetSmtpForm(); setShowSmtpModal(true); }} variant="outline" size="sm">
+              <Plus size={14} className="mr-2" /> Ajouter
+            </Button>
+          </div>
+
+          {smtpConfigs.length === 0 ? (
+            <div className="bg-card border border-border rounded-xl p-8 text-center">
+              <Send size={48} className="mx-auto text-muted-foreground mb-3" />
+              <p className="text-muted-foreground">Aucune connexion SMTP configurée</p>
+              <p className="text-xs text-muted-foreground mt-2">Ajoutez Gmail, Outlook, SendGrid ou tout autre serveur SMTP</p>
+              <Button onClick={() => { resetSmtpForm(); setShowSmtpModal(true); }} className="mt-4" variant="outline">
+                <Plus size={16} className="mr-2" /> Configurer une connexion SMTP
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {smtpConfigs.map((config) => (
+                <div key={config.provider_code} className="bg-card border border-border rounded-xl p-4">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-indigo-500/10">
+                        <Send size={24} className="text-indigo-400" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-foreground">{config.provider_name}</p>
+                        <p className="text-xs text-muted-foreground">{config.provider_code} • {config.host}:{config.port}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {config.is_all_states ? (
+                            <span className="inline-flex items-center gap-1"><Globe size={12} /> Pour tous les états</span>
+                          ) : config.countries?.length > 0 ? (
+                            `Pays: ${config.countries.join(', ')}`
+                          ) : (
+                            'Tous les pays'
+                          )}
+                        </p>
+                        {config.last_status && (
+                          <p className={`text-xs mt-1 ${config.last_status === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                            Dernier test: {config.last_status === 'success' ? 'réussi' : 'échoué'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right text-sm">
+                        <p className="text-muted-foreground">Priorité: {config.priority}</p>
+                      </div>
+
+                      <Badge className={config.is_active ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>
+                        {config.is_active ? 'Actif' : 'Inactif'}
+                      </Badge>
+
+                      {config.is_default && (
+                        <Badge className="bg-primary/20 text-primary">Défaut</Badge>
+                      )}
+
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => handleTestSmtpConfig(config)} disabled={smtpTesting} title="Envoyer un email de test">
+                          <Send size={14} />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleEditSmtpConfig(config)}>
+                          <Edit2 size={14} />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-400" onClick={() => handleDeleteSmtpConfig(config.provider_code)}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="bg-card border border-border rounded-xl p-4 max-w-sm">
+            <Label className="text-xs text-muted-foreground">Adresse mail de test (utilisée par le bouton d'envoi de test ci-dessus)</Label>
+            <Input className="mt-2" placeholder="test@exemple.com" value={smtpTestEmail} onChange={(e) => setSmtpTestEmail(e.target.value)} />
+          </div>
         </TabsContent>
 
         {/* Support Numbers */}
@@ -1680,6 +1890,207 @@ export default function AdminWhatsapp() {
                 Annuler
               </Button>
               <Button className="flex-1 btn-primary-glow" onClick={handleSaveSmsProvider}>
+                <Save size={16} className="mr-2" /> Enregistrer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit SMTP Modal */}
+      {showSmtpModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-2xl my-8 animate-scale-in">
+            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Send className="text-indigo-400" />
+              {selectedSmtpConfig ? 'Modifier la connexion SMTP' : 'Ajouter une connexion SMTP'}
+            </h3>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nom de la connexion *</Label>
+                  <Input
+                    placeholder="Ex: Gmail principal, SendGrid RDC"
+                    value={smtpForm.provider_name}
+                    onChange={(e) => setSmtpForm({...smtpForm, provider_name: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Code unique *</Label>
+                  <Input
+                    placeholder="Ex: GMAIL_MAIN, SENDGRID_CD"
+                    value={smtpForm.provider_code}
+                    onChange={(e) => setSmtpForm({...smtpForm, provider_code: e.target.value.toUpperCase()})}
+                    disabled={!!selectedSmtpConfig}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2 space-y-2">
+                  <Label>Hôte SMTP *</Label>
+                  <Input
+                    placeholder="smtp.gmail.com"
+                    value={smtpForm.host}
+                    onChange={(e) => setSmtpForm({...smtpForm, host: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Port</Label>
+                  <Input
+                    type="number"
+                    value={smtpForm.port}
+                    onChange={(e) => setSmtpForm({...smtpForm, port: parseInt(e.target.value) || 587})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Utilisateur SMTP *</Label>
+                  <Input
+                    placeholder="votre-compte@gmail.com"
+                    value={smtpForm.username}
+                    onChange={(e) => setSmtpForm({...smtpForm, username: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Mot de passe {selectedSmtpConfig ? '(laisser vide pour garder l\'actuel)' : '*'}</Label>
+                  <Input
+                    type="password"
+                    placeholder="Mot de passe ou clé API"
+                    value={smtpForm.password}
+                    onChange={(e) => setSmtpForm({...smtpForm, password: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Adresse d'expédition *</Label>
+                  <Input
+                    placeholder="no-reply@monityworld.win"
+                    value={smtpForm.from_email}
+                    onChange={(e) => setSmtpForm({...smtpForm, from_email: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nom d'expéditeur</Label>
+                  <Input
+                    placeholder="Monity World"
+                    value={smtpForm.from_name}
+                    onChange={(e) => setSmtpForm({...smtpForm, from_name: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              {/* "For all states" selector */}
+              <div className="space-y-2">
+                <Label>Portée de la connexion</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    className={`p-3 rounded-lg border text-left text-sm transition-all ${
+                      smtpForm.is_all_states
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:bg-secondary/30'
+                    }`}
+                    onClick={() => setSmtpForm({...smtpForm, is_all_states: true, countries: []})}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Globe size={16} className="text-primary" />
+                      <div>
+                        <p className="font-medium text-foreground">Pour tous les états</p>
+                        <p className="text-xs text-muted-foreground">Connexion de secours utilisée quand celle d'un pays est indisponible</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`p-3 rounded-lg border text-left text-sm transition-all ${
+                      !smtpForm.is_all_states
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:bg-secondary/30'
+                    }`}
+                    onClick={() => setSmtpForm({...smtpForm, is_all_states: false})}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Phone size={16} className="text-primary" />
+                      <div>
+                        <p className="font-medium text-foreground">Pays spécifiques</p>
+                        <p className="text-xs text-muted-foreground">Choisissez un ou plusieurs pays ci-dessous</p>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {!smtpForm.is_all_states && (
+                <div className="space-y-2">
+                  <Label>Pays assignés</Label>
+                  <Select
+                    value={smtpForm.countries.length > 0 ? smtpForm.countries[0] : 'all'}
+                    onValueChange={(v) => setSmtpForm({...smtpForm, countries: v === 'all' ? [] : [v]})}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Tous les pays" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all"><Globe size={14} className="inline mr-2" />Tous les pays</SelectItem>
+                      {countries.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>{c.flag} {c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Priorité</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={smtpForm.priority}
+                    onChange={(e) => setSmtpForm({...smtpForm, priority: parseInt(e.target.value) || 1})}
+                  />
+                </div>
+                <div className="flex items-end pb-1">
+                  <div className="flex items-center gap-2">
+                    <Label>Utiliser TLS</Label>
+                    <Switch
+                      checked={smtpForm.use_tls}
+                      onCheckedChange={(v) => setSmtpForm({...smtpForm, use_tls: v})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Label>Actif</Label>
+                    <Switch
+                      checked={smtpForm.is_active}
+                      onCheckedChange={(v) => setSmtpForm({...smtpForm, is_active: v})}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label>Par défaut</Label>
+                    <Switch
+                      checked={smtpForm.is_default}
+                      onCheckedChange={(v) => setSmtpForm({...smtpForm, is_default: v})}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowSmtpModal(false); resetSmtpForm(); }}>
+                Annuler
+              </Button>
+              <Button className="flex-1 btn-primary-glow" onClick={handleSaveSmtpConfig}>
                 <Save size={16} className="mr-2" /> Enregistrer
               </Button>
             </div>

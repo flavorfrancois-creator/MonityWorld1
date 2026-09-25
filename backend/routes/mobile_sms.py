@@ -25,7 +25,7 @@ from rbac import (
     can_manage_role, can_create_role, can_suspend_role,
     has_permission, require_permission
 )
-from models.schemas import MobilePaymentOperatorReq, MobilePaymentDepositReq, MobilePaymentWithdrawReq, SmsApiConfigReq, SmsTestReq
+from models.schemas import MobilePaymentOperatorReq, MobilePaymentDepositReq, MobilePaymentWithdrawReq, SmsApiConfigReq, SmsTestReq, SmtpConfigReq, SmtpTestReq
 
 logger = logging.getLogger(__name__)
 from utils.activity import log_admin_activity, ACTIVITY_ACTIONS, ACTIVITY_RESOURCES
@@ -402,5 +402,108 @@ async def get_available_sms_providers(adm=Depends(get_admin)):
             }
         ]
     }
+
+
+# === SMTP EMAIL CONNECTIONS MANAGEMENT ===
+# Multiple SMTP servers can be configured, each assigned to one or more
+# countries/states, or flagged "for all states" as a fallback connection.
+# When an OTP or password-reset email is sent, the country-specific
+# connection is tried first, falling back to the "all states" one if the
+# country connection is unavailable/unconfigured.
+
+@router.get("/admin/smtp-configs")
+async def get_smtp_configs(adm=Depends(get_admin)):
+    """Get all configured SMTP connections"""
+    configs = await db.smtp_configs.find({}, {"_id": 0, "password": 0}).sort([("priority", 1), ("provider_name", 1)]).to_list(50)
+    return {"configs": configs}
+
+
+@router.post("/admin/smtp-configs")
+async def create_smtp_config(req: SmtpConfigReq, adm=Depends(get_admin_with_kyc)):
+    """Create or update an SMTP connection configuration"""
+    if not is_original_primary_admin(adm):
+        raise HTTPException(403, "Seul l'administrateur principal peut configurer les connexions SMTP")
+    
+    provider_code = req.provider_code.upper()
+    existing = await db.smtp_configs.find_one({"provider_code": provider_code})
+    
+    config_data = {
+        "provider_name": req.provider_name,
+        "provider_code": provider_code,
+        "host": req.host,
+        "port": req.port,
+        "username": req.username,
+        "from_email": req.from_email,
+        "from_name": req.from_name,
+        "use_tls": req.use_tls,
+        # "Pour tous les etats" clears the country list so this connection
+        # is used as the universal fallback when other connections fail.
+        "countries": [] if req.is_all_states else [c.upper() for c in req.countries],
+        "is_all_states": req.is_all_states,
+        "is_active": req.is_active,
+        "is_default": req.is_default,
+        "priority": req.priority,
+        "updated_at": now_iso(),
+        "updated_by": adm["id"]
+    }
+    # Keep the existing password if a blank one was submitted (edit mode)
+    if req.password:
+        config_data["password"] = req.password
+    elif not existing:
+        raise HTTPException(400, "Le mot de passe est requis pour une nouvelle connexion")
+    
+    if req.is_default:
+        await db.smtp_configs.update_many(
+            {"provider_code": {"$ne": provider_code}},
+            {"$set": {"is_default": False}}
+        )
+    
+    result = await db.smtp_configs.update_one(
+        {"provider_code": provider_code},
+        {"$set": config_data, "$setOnInsert": {"id": gen_id(), "created_at": now_iso()}},
+        upsert=True
+    )
+    
+    await log_admin_activity(adm, "create" if result.upserted_id else "update", "settings",
+                             details={"action": "smtp_config", "provider": provider_code})
+    
+    return {"message": f"Connexion SMTP {req.provider_name} configuree"}
+
+
+@router.delete("/admin/smtp-configs/{provider_code}")
+async def delete_smtp_config(provider_code: str, adm=Depends(get_admin_with_kyc)):
+    """Delete an SMTP connection"""
+    if not is_original_primary_admin(adm):
+        raise HTTPException(403, "Seul l'administrateur principal peut supprimer les connexions SMTP")
+    
+    result = await db.smtp_configs.delete_one({"provider_code": provider_code.upper()})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Connexion non trouvee")
+    
+    await log_admin_activity(adm, "delete", "settings", details={"action": "smtp_config_delete", "provider": provider_code})
+    return {"message": "Connexion SMTP supprimee"}
+
+
+@router.post("/admin/smtp-configs/{provider_code}/test")
+async def test_smtp_config(provider_code: str, req: SmtpTestReq, adm=Depends(get_admin_with_kyc)):
+    """Send a real test email through a specific SMTP connection"""
+    if not is_original_primary_admin(adm):
+        raise HTTPException(403, "Seul l'administrateur principal peut tester les connexions SMTP")
+    
+    config = await db.smtp_configs.find_one({"provider_code": provider_code.upper()})
+    if not config:
+        raise HTTPException(404, "Connexion non trouvee")
+    
+    from utils.email import _send_via_config
+    subject = "Monity World - Test de connexion SMTP"
+    body = req.message or "Ceci est un message de test de votre connexion SMTP Monity World."
+    try:
+        _send_via_config(config, req.to_email, subject, body)
+    except Exception as e:
+        await db.smtp_configs.update_one({"provider_code": provider_code.upper()}, {"$set": {"last_status": "failed", "last_error": str(e), "last_used_at": now_iso()}})
+        raise HTTPException(400, f"Echec de l'envoi: {e}")
+    
+    await db.smtp_configs.update_one({"provider_code": provider_code.upper()}, {"$set": {"last_status": "success", "last_used_at": now_iso()}})
+    return {"message": f"Email de test envoye a {req.to_email} via {config['provider_name']}"}
 
 

@@ -114,23 +114,11 @@ def validate_nfc_serial(serial: str) -> bool:
     return bool(re.match(pattern, serial.upper()))
 
 
-def send_email_otp(email: str, otp: str):
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    username = os.getenv("SMTP_USERNAME")
-    password = os.getenv("SMTP_PASSWORD")
-    sender = os.getenv("SMTP_FROM", username)
-    if not all([host, username, password, sender]):
-        raise RuntimeError("SMTP is not configured")
-    message = EmailMessage()
-    message["Subject"] = "Monity World - Réinitialisation du mot de passe"
-    message["From"] = sender
-    message["To"] = email
-    message.set_content(f"Votre code OTP est : {otp}\n\nCe code expire dans 10 minutes.")
-    with smtplib.SMTP(host, port, timeout=15) as smtp:
-        smtp.starttls()
-        smtp.login(username, password)
-        smtp.send_message(message)
+async def send_email_otp(email: str, otp: str, country_code: str = None):
+    from utils.email import send_email
+    subject = "Monity World - Réinitialisation du mot de passe"
+    body = f"Votre code OTP est : {otp}\n\nCe code expire dans 10 minutes."
+    await send_email(email, subject, body, country_code)
 
 
 def get_admin_country_filter(admin: dict) -> list:
@@ -1504,7 +1492,7 @@ async def request_admin_password_reset(email: str = Body(..., embed=True)):
         "admin_password_reset_expires": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
     }})
     try:
-        send_email_otp(user["email"], otp)
+        await send_email_otp(user["email"], otp, user.get("country"))
     except Exception as exc:
         logger.error("Admin password reset email failed: %s", exc)
         raise HTTPException(503, "Le service email n'est pas configuré")
