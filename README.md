@@ -84,7 +84,7 @@ node index.js
 
 Le système crée automatiquement un compte administrateur principal au démarrage :
 - **Email**: admin@monityworld.com
-- **Mot de passe**: Admin@123
+- **Mot de passe**: défini au premier déploiement (voir `ADMIN_RESET_PASSWORD` pour une réinitialisation d'urgence)
 - **Rôle**: primary_admin (accès complet)
 
 > ⚠️ Changez ce mot de passe immédiatement après le premier déploiement !

@@ -5428,7 +5428,7 @@ async def startup():
             "referred_by": None, "otp": None, "profile_image": None, "created_at": now_iso()
         })
         # Admin accounts do NOT get wallets
-        logger.info("Super Admin créé: +243000000000 / Admin@123")
+        logger.info("Super Admin créé: +243000000000")
 
     # Disable wallets for all admin/manager accounts (they should not have client features)
     admin_users = await db.users.find({"role": {"$in": NON_CLIENT_ROLES}}, {"id": 1}).to_list(1000)
