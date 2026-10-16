@@ -5403,6 +5403,17 @@ async def startup():
             }}
         )
 
+    # Emergency admin password reset: set ADMIN_RESET_PASSWORD in the environment,
+    # redeploy once, then REMOVE the variable.
+    reset_pw = os.environ.get("ADMIN_RESET_PASSWORD")
+    if reset_pw:
+        res = await db.users.update_one(
+            {"email": "admin@monityworld.com"},
+            {"$set": {"password": hash_pw(reset_pw), "is_active": True,
+                      "failed_attempts": 0, "locked_until": None}}
+        )
+        logging.getLogger(__name__).warning("Admin password reset applied (matched=%s). Remove ADMIN_RESET_PASSWORD.", res.matched_count)
+
     if not await db.users.find_one({"role": "admin"}):
         aid = gen_id()
         await db.users.insert_one({
