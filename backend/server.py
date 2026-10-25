@@ -5209,6 +5209,7 @@ from routes.admin_rules import router as admin_rules_router
 from routes.admin_stats import router as admin_stats_router
 from routes.admin_countries import router as admin_countries_router
 from routes.mobile_compat import router as mobile_compat_router
+from routes.sms_gateway import router as sms_gateway_router
 
 app.include_router(admin_whatsapp_router)
 app.include_router(partner_routes_router)
@@ -5222,6 +5223,7 @@ app.include_router(admin_rules_router)
 app.include_router(admin_stats_router)
 app.include_router(admin_countries_router)
 app.include_router(mobile_compat_router)
+app.include_router(sms_gateway_router)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','), allow_methods=["*"], allow_headers=["*"])
 

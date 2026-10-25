@@ -9,6 +9,7 @@ import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Switch } from '../../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import SmsGatewayPanel from './SmsGatewayPanel';
 import {
   MessageCircle, QrCode, Phone, Globe, Plus, Trash2, RefreshCw, 
   CheckCircle, XCircle, AlertCircle, Loader2, Send, Save, Edit2,
@@ -893,6 +894,9 @@ export default function AdminWhatsapp() {
           <TabsTrigger value="smtp" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             <Send size={16} className="mr-2" /> SMTP Email ({smtpConfigs.length})
           </TabsTrigger>
+          <TabsTrigger value="gateway" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <Smartphone size={16} className="mr-2" /> Passerelle SMS
+          </TabsTrigger>
           <TabsTrigger value="templates" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             <Settings size={16} className="mr-2" /> Templates OTP
           </TabsTrigger>
@@ -1091,6 +1095,10 @@ export default function AdminWhatsapp() {
         </TabsContent>
 
         {/* Support Numbers */}
+        <TabsContent value="gateway" className="mt-4">
+          <SmsGatewayPanel />
+        </TabsContent>
+
         <TabsContent value="support" className="mt-4 space-y-4">
           <p className="text-sm text-muted-foreground">Ces numéros sont dédiés au service client et aux réclamations. Ils ne reçoivent pas les codes OTP.</p>
           

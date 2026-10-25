@@ -36,6 +36,24 @@ async def get_whatsapp_config_for_country(country_code: str, config_type: str = 
 
 
 async def send_whatsapp_message(phone: str, message: str, country_code: str = None) -> dict:
+    """WhatsApp first, SMS gateway (Android relay app) as fallback; reversed when 'sms_first' is set."""
+    from routes.sms_gateway import get_gateway_settings, send_sms_via_gateway
+
+    settings = await get_gateway_settings()
+    gateway_text = message.replace("\\n", " ").replace("\n", " ")[:300]
+    if settings["enabled"] and settings["sms_first"]:
+        result = await send_sms_via_gateway(phone, gateway_text, country_code)
+        if result.get("success"):
+            return result
+    result = await _send_via_whatsapp(phone, message, country_code)
+    if not result.get("success") and settings["enabled"] and not settings["sms_first"]:
+        fallback = await send_sms_via_gateway(phone, gateway_text, country_code)
+        if fallback.get("success"):
+            return fallback
+    return result
+
+
+async def _send_via_whatsapp(phone: str, message: str, country_code: str = None) -> dict:
     if not country_code:
         phone_clean = phone.replace("+", "").replace(" ", "")
         if phone_clean.startswith("243"): country_code = "CD"
