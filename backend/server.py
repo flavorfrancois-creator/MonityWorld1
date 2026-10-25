@@ -437,6 +437,8 @@ class RegisterReq(BaseModel):
     language: str = "fr"
     referral_code: Optional[str] = None
     nfc_card_number: Optional[str] = None  # 16-digit printed card number (e.g., 8552-9657-5431-4523)
+    accept_terms: bool = False
+    terms_version: Optional[str] = None
 
 class LoginReq(BaseModel):
     phone: Optional[str] = None  # Can login with phone OR email
@@ -1167,6 +1169,8 @@ async def get_countries():
 
 @api_router.post("/auth/register")
 async def register(req: RegisterReq):
+    if not req.accept_terms:
+        raise HTTPException(400, "Vous devez accepter les Conditions Générales d'Utilisation pour créer un compte")
     if await db.users.find_one({"phone": req.phone}):
         raise HTTPException(400, "Ce numéro est déjà enregistré")
     
@@ -1218,6 +1222,7 @@ async def register(req: RegisterReq):
         "free_card_used": False,  # Track if free card has been used
         "max_wallets": 2,  # Maximum wallets allowed
         "reset_token": None, "reset_token_expires": None,
+        "terms_accepted_at": now_iso(), "terms_version": req.terms_version or "1.0",
         "created_at": now_iso()
     }
     await db.users.insert_one(doc)

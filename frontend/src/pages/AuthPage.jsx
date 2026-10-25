@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import TermsDialog, { TERMS_VERSION } from '../components/TermsDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Eye, EyeOff, Phone, Lock, User, Globe, ArrowRight, ShieldCheck, CreditCard, Mail, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
@@ -59,6 +60,8 @@ export default function AuthPage() {
   });
   const [phonePrefix, setPhonePrefix] = useState('+243');
   const [showNfcField, setShowNfcField] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   // Load countries from API
   useEffect(() => {
@@ -159,6 +162,7 @@ export default function AuthPage() {
       toast.error('Remplissez tous les champs obligatoires'); 
       return; 
     }
+    if (!acceptTerms) { toast.error("Vous devez accepter les Conditions Générales d'Utilisation"); return; }
     if (regData.password.length < 6) { toast.error('Mot de passe minimum 6 caractères'); return; }
     
     // Build full phone number with prefix
@@ -166,7 +170,7 @@ export default function AuthPage() {
     
     setLoading(true);
     try {
-      const payload = { ...regData, phone: fullPhone };
+      const payload = { ...regData, phone: fullPhone, accept_terms: true, terms_version: TERMS_VERSION };
       await API.post('/auth/register', payload);
       setRegisteredPhone(fullPhone);
       setOtpModal(true);
@@ -613,9 +617,28 @@ export default function AuthPage() {
                   )}
                 </div>
 
-                <Button type="submit" className="w-full h-11 btn-primary-glow font-medium" disabled={loading} data-testid="register-submit-btn">
+                <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer" data-testid="register-terms-label">
+                  <input
+                    type="checkbox"
+                    checked={acceptTerms}
+                    onChange={e => setAcceptTerms(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-primary"
+                    data-testid="register-terms-checkbox"
+                  />
+                  <span>
+                    J'ai lu et j'accepte les{' '}
+                    <button type="button" onClick={() => setTermsOpen(true)} className="text-primary underline" data-testid="register-terms-link">
+                      Conditions Générales d'Utilisation
+                    </button>
+                    , y compris les fonctionnalités et les risques liés au service. <span className="text-red-400">*</span>
+                  </span>
+                </label>
+
+                <Button type="submit" className="w-full h-11 btn-primary-glow font-medium" disabled={loading || !acceptTerms} data-testid="register-submit-btn">
                   {loading ? <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" /> : <><span>Créer mon compte</span><ArrowRight size={16} className="ml-2" /></>}
                 </Button>
+                <TermsDialog open={termsOpen} onOpenChange={setTermsOpen} onAccept={() => setAcceptTerms(true)} />
+
               </form>
             </TabsContent>
 
