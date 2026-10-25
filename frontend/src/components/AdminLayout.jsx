@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
 import {
-  LayoutDashboard, Users, CreditCard, Globe, Settings, LogOut, ArrowLeft, ShieldCheck, MapPin, Smartphone, Shield, Sliders, UserCheck, ToggleRight, Building2, Percent, Nfc, BarChart3, Coins, Menu, ChevronLeft, ChevronRight, X, Lock, Crown, Activity, FileSpreadsheet, MessageCircle, Wallet, CalendarClock, Plug, Banknote
+  LayoutDashboard, Users, CreditCard, Globe, Settings, LogOut, ShieldCheck, MapPin, Smartphone, Shield, Sliders, UserCheck, ToggleRight, Building2, Percent, Nfc, BarChart3, Coins, Menu, ChevronLeft, ChevronRight, X, Lock, Crown, Activity, FileSpreadsheet, MessageCircle, Wallet, CalendarClock, Plug, Banknote
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
@@ -156,16 +156,8 @@ export default function AdminLayout({ children }) {
         })}
       </nav>
 
-      {/* Back + Logout */}
+      {/* Logout */}
       <div className={`${isCollapsed && !mobile ? 'px-2' : 'px-3'} py-4 border-t border-border space-y-1`}>
-        <Link 
-          to="/dashboard" 
-          title={isCollapsed && !mobile ? 'Retour au portail' : undefined}
-          className={`sidebar-item flex items-center ${isCollapsed && !mobile ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-all duration-200`}
-        >
-          <ArrowLeft size={18} className="flex-shrink-0" />
-          {(!isCollapsed || mobile) && <span className="whitespace-nowrap">Retour au portail</span>}
-        </Link>
         <Button 
           variant="ghost" 
           className={`w-full ${isCollapsed && !mobile ? 'justify-center px-2' : 'justify-start gap-3'} text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-200`} 
