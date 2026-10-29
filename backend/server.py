@@ -63,7 +63,9 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 security = HTTPBearer()
-JWT_SECRET = os.environ.get('JWT_SECRET', 'monity-world-secret-2024')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET or len(JWT_SECRET) < 16:
+    raise RuntimeError('JWT_SECRET must be set (16+ characters)')
 JWT_ALGORITHM = "HS256"
 
 # Non-client roles - these accounts cannot have wallets or make transfers
@@ -368,6 +370,8 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password": 0})
         if not user:
             raise HTTPException(401, "Utilisateur non trouvé")
+        if user.get("is_suspended") or user.get("is_active") is False:
+            raise HTTPException(403, "Votre compte est suspendu")
         # Session enforcement: check if session_id matches
         token_sid = payload.get("sid")
         if token_sid and user.get("active_session_id") and token_sid != user.get("active_session_id"):
@@ -1564,8 +1568,9 @@ async def request_password_reset(req: PasswordResetRequestReq):
     else:
         user = await db.users.find_one({"phone": req.identifier})
     
+    generic = {"message": "Si le compte existe, les instructions ont été envoyées."}
     if not user:
-        raise HTTPException(404, "Utilisateur non trouvé")
+        return generic
     
     # Generate reset token
     reset_token = gen_reset_token()
@@ -1579,13 +1584,17 @@ async def request_password_reset(req: PasswordResetRequestReq):
         }}
     )
     
-    # In production, send email/SMS here
-    logger.info(f"Password reset requested for {req.identifier}, token: {reset_token}")
+    text = f"Monity World - code de réinitialisation du mot de passe : {reset_token}\nValable 1 heure. Ne le partagez jamais."
+    try:
+        if req.method == "email" and user.get("email"):
+            from utils.email import send_email
+            await send_email(user["email"], "Monity World - Réinitialisation du mot de passe", text, user.get("country"))
+        else:
+            await send_whatsapp_message(user["phone"], text)
+    except Exception:
+        logger.exception("Envoi du jeton de réinitialisation échoué")
     
-    return {
-        "message": f"Instructions envoyées par {'email' if req.method == 'email' else 'SMS'}",
-        "reset_token": reset_token  # Remove in production - for demo only
-    }
+    return generic
 
 @api_router.post("/auth/reset-password")
 async def reset_password(req: PasswordResetConfirmReq):
@@ -2624,7 +2633,11 @@ async def transfer(req: TransferReq, u=Depends(get_current_user)):
         raise HTTPException(400, f"Solde insuffisant. Disponible: {sw['balance']} {req.currency}, Requis: {total} (montant: {req.amount} + frais: {base_fee})")
     
     # Deduct sender immediately
-    await db.wallets.update_one({"user_id": u["id"], "currency": req.currency}, {"$inc": {"balance": -total}})
+    debit = await db.wallets.update_one(
+        {"user_id": u["id"], "currency": req.currency, "balance": {"$gte": total}},
+        {"$inc": {"balance": -total}})
+    if debit.modified_count != 1:
+        raise HTTPException(400, "Solde insuffisant")
     n = now_iso()
     
     # Auto-complete small transactions, pending for larger ones
@@ -5423,11 +5436,14 @@ async def startup():
             res = await db.users.update_one({"is_super_admin": True}, update)
         logging.getLogger(__name__).warning("Admin password reset applied (matched=%s). Remove ADMIN_RESET_PASSWORD.", res.matched_count)
 
-    if not await db.users.find_one({"role": "admin"}):
+    bootstrap_pw = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD")
+    if not await db.users.find_one({"role": "admin"}) and not bootstrap_pw:
+        logger.warning("Aucun administrateur et ADMIN_BOOTSTRAP_PASSWORD non défini: aucun compte créé")
+    if bootstrap_pw and not await db.users.find_one({"role": "admin"}):
         aid = gen_id()
         await db.users.insert_one({
             "id": aid, "phone": "+243000000000", "name": "Administrateur Principal",
-            "email": "admin@monityworld.com", "password": hash_pw("Admin@123"),
+            "email": "admin@monityworld.com", "password": hash_pw(bootstrap_pw),
             "role": "admin", "country": "CD", "language": "fr",
             "is_active": True, "is_verified": True, "is_super_admin": True,
             "kyc_status": "approved",

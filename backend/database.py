@@ -28,7 +28,9 @@ if not mongo_url:
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'monity_world')]
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'monity-world-secret-2024')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET or len(JWT_SECRET) < 16:
+    raise RuntimeError('JWT_SECRET must be set (16+ characters)')
 JWT_ALGORITHM = "HS256"
 security = HTTPBearer()
 

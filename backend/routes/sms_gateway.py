@@ -31,6 +31,13 @@ LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK = timedelta(minutes=15)
 
 
+async def get_gateway_admin(adm=Depends(get_admin_with_kyc)):
+    # Relays can read OTPs, so managers must not control them
+    if adm.get("role") not in ("admin", "primary_admin", "secondary_primary_admin"):
+        raise HTTPException(403, "Réservé aux administrateurs principaux")
+    return adm
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -148,12 +155,12 @@ async def get_gateway_settings() -> dict:
 
 
 @router.get("/admin/sms-gateway/settings")
-async def read_settings(adm=Depends(get_admin)):
+async def read_settings(adm=Depends(get_gateway_admin)):
     return await get_gateway_settings()
 
 
 @router.put("/admin/sms-gateway/settings")
-async def save_settings(req: GatewaySettingsReq, adm=Depends(get_admin_with_kyc)):
+async def save_settings(req: GatewaySettingsReq, adm=Depends(get_gateway_admin)):
     await db.sms_gateway_settings.update_one(
         {"_id": "main"}, {"$set": {"enabled": req.enabled, "sms_first": req.sms_first}}, upsert=True)
     return await get_gateway_settings()
@@ -161,7 +168,7 @@ async def save_settings(req: GatewaySettingsReq, adm=Depends(get_admin_with_kyc)
 
 # ------------------------------------------------------------------ admin API
 @router.get("/admin/sms-gateway/relays")
-async def list_relays(adm=Depends(get_admin)):
+async def list_relays(adm=Depends(get_gateway_admin)):
     relays = await db.sms_gateway_relays.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
     stats = {}
     async for row in db.sms_gateway_jobs.aggregate([
@@ -177,7 +184,7 @@ async def list_relays(adm=Depends(get_admin)):
 
 
 @router.post("/admin/sms-gateway/relays")
-async def create_relay(req: RelayCreateReq, adm=Depends(get_admin_with_kyc)):
+async def create_relay(req: RelayCreateReq, adm=Depends(get_gateway_admin)):
     phone = _norm_phone(req.phone)
     if await db.sms_gateway_relays.find_one({"phone": phone}):
         raise HTTPException(409, "Ce numéro de téléphone est déjà utilisé")
@@ -194,7 +201,7 @@ async def create_relay(req: RelayCreateReq, adm=Depends(get_admin_with_kyc)):
 
 
 @router.put("/admin/sms-gateway/relays/{relay_id}")
-async def update_relay(relay_id: str, req: RelayUpdateReq, adm=Depends(get_admin_with_kyc)):
+async def update_relay(relay_id: str, req: RelayUpdateReq, adm=Depends(get_gateway_admin)):
     relay = await db.sms_gateway_relays.find_one({"id": relay_id})
     if not relay:
         raise HTTPException(404, "Compte relais introuvable")
@@ -224,7 +231,7 @@ async def update_relay(relay_id: str, req: RelayUpdateReq, adm=Depends(get_admin
 
 
 @router.post("/admin/sms-gateway/relays/{relay_id}/rotate-key")
-async def rotate_key(relay_id: str, adm=Depends(get_admin_with_kyc)):
+async def rotate_key(relay_id: str, adm=Depends(get_gateway_admin)):
     if not await db.sms_gateway_relays.find_one({"id": relay_id}):
         raise HTTPException(404, "Compte relais introuvable")
     connection_key = secrets.token_urlsafe(24)
@@ -234,7 +241,7 @@ async def rotate_key(relay_id: str, adm=Depends(get_admin_with_kyc)):
 
 
 @router.delete("/admin/sms-gateway/relays/{relay_id}")
-async def delete_relay(relay_id: str, adm=Depends(get_admin_with_kyc)):
+async def delete_relay(relay_id: str, adm=Depends(get_gateway_admin)):
     result = await db.sms_gateway_relays.delete_one({"id": relay_id})
     if not result.deleted_count:
         raise HTTPException(404, "Compte relais introuvable")
@@ -242,7 +249,7 @@ async def delete_relay(relay_id: str, adm=Depends(get_admin_with_kyc)):
 
 
 @router.post("/admin/sms-gateway/test")
-async def test_sms(req: TestSmsReq, adm=Depends(get_admin_with_kyc)):
+async def test_sms(req: TestSmsReq, adm=Depends(get_gateway_admin)):
     to = _norm_phone(req.to)
     if not re.fullmatch(r"\+?[0-9]{6,20}", to):
         raise HTTPException(400, "Numéro destinataire invalide")
