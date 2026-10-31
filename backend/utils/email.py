@@ -6,6 +6,7 @@ fallback to the next available connection if one fails or isn't configured.
 Falls back to legacy SMTP_* environment variables if no DB config exists yet.
 """
 import os
+import asyncio
 import smtplib
 import logging
 from email.message import EmailMessage
@@ -37,6 +38,16 @@ async def get_smtp_configs_for_country(country_code: str = None):
     return ordered
 
 
+def _smtp_connect(host: str, port: int, use_tls: bool = True):
+    """Port 465 uses implicit TLS; other ports use STARTTLS when requested."""
+    if port == 465:
+        return smtplib.SMTP_SSL(host, port, timeout=15)
+    smtp = smtplib.SMTP(host, port, timeout=15)
+    if use_tls:
+        smtp.starttls()
+    return smtp
+
+
 def _send_via_config(config: dict, to_email: str, subject: str, body: str):
     host = config.get("host")
     port = int(config.get("port") or 587)
@@ -53,9 +64,7 @@ def _send_via_config(config: dict, to_email: str, subject: str, body: str):
     message["To"] = to_email
     message.set_content(body)
 
-    with smtplib.SMTP(host, port, timeout=15) as smtp:
-        if config.get("use_tls", True):
-            smtp.starttls()
+    with _smtp_connect(host, port, config.get("use_tls", True)) as smtp:
         smtp.login(username, password)
         smtp.send_message(message)
 
@@ -73,8 +82,7 @@ def _send_via_env(to_email: str, subject: str, body: str):
     message["From"] = sender
     message["To"] = to_email
     message.set_content(body)
-    with smtplib.SMTP(host, port, timeout=15) as smtp:
-        smtp.starttls()
+    with _smtp_connect(host, port) as smtp:
         smtp.login(username, password)
         smtp.send_message(message)
 
@@ -88,7 +96,7 @@ async def send_email(to_email: str, subject: str, body: str, country_code: str =
     last_error = None
     for config in configs:
         try:
-            _send_via_config(config, to_email, subject, body)
+            await asyncio.to_thread(_send_via_config, config, to_email, subject, body)
             await db.smtp_configs.update_one(
                 {"provider_code": config["provider_code"]},
                 {"$set": {"last_used_at": now_iso(), "last_status": "success"}}
@@ -105,7 +113,7 @@ async def send_email(to_email: str, subject: str, body: str, country_code: str =
 
     # No DB config matched/succeeded - try legacy env-var SMTP as last resort
     try:
-        _send_via_env(to_email, subject, body)
+        await asyncio.to_thread(_send_via_env, to_email, subject, body)
         return
     except Exception as e:
         last_error = last_error or e
