@@ -50,6 +50,11 @@ from utils.auth import (
     KYC_REQUIRED_OPERATIONS
 )
 from utils.whatsapp import send_whatsapp_otp, send_whatsapp_message
+from utils.otp_settings import (
+    get_otp_settings, expiry_iso, is_expired, purge_unconfirmed_accounts,
+    REGISTRATION_RANGE, TRANSACTION_RANGE, SETTINGS_KEY as OTP_SETTINGS_KEY
+)
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -121,6 +126,49 @@ async def send_email_otp(email: str, otp: str, country_code: str = None):
     subject = "Monity World - Réinitialisation du mot de passe"
     body = f"Votre code OTP est : {otp}\n\nCe code expire dans 10 minutes."
     await send_email(email, subject, body, country_code)
+
+
+async def send_registration_email_otp(email: str, otp: str, minutes: int, country_code: str = None):
+    from utils.email import send_email
+    subject = "Monity World - Confirmez votre adresse e-mail"
+    body = (f"Votre code de confirmation est : {otp}\n\n"
+            f"Ce code expire dans {minutes} minutes. Sans confirmation de votre e-mail ou de votre numéro "
+            "de téléphone dans l'heure, votre inscription sera supprimée.")
+    await send_email(email, subject, body, country_code)
+
+
+async def issue_registration_otps(user: dict, channels=("phone", "email")) -> dict:
+    """Generate, store and send the registration OTPs for the requested channels."""
+    minutes = (await get_otp_settings(db))["registration_otp_minutes"]
+    expires = expiry_iso(minutes)
+    updates = {}
+    if "phone" in channels and user.get("phone"):
+        updates.update({"otp": gen_otp(), "otp_expires_at": expires})
+    if "email" in channels and user.get("email") and user.get("email_verified") is not True:
+        updates.update({"email_otp": gen_otp(), "email_otp_expires_at": expires})
+    if not updates:
+        return {"minutes": minutes}
+    await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    if "otp" in updates:
+        try:
+            await send_whatsapp_otp(user["phone"], updates["otp"])
+        except Exception as e:
+            logger.error(f"Failed to send OTP via WhatsApp: {e}")
+    if "email_otp" in updates:
+        try:
+            await send_registration_email_otp(user["email"], updates["email_otp"], minutes, user.get("country"))
+        except Exception as e:
+            logger.error(f"Failed to send registration email OTP: {e}")
+    return {"minutes": minutes}
+
+
+async def unconfirmed_cleanup_loop():
+    while True:
+        try:
+            await purge_unconfirmed_accounts(db)
+        except Exception as e:
+            logger.error(f"Unconfirmed accounts cleanup failed: {e}")
+        await asyncio.sleep(300)
 
 
 def get_admin_country_filter(admin: dict) -> list:
@@ -379,6 +427,13 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
         return user
     except JWTError:
         raise HTTPException(401, "Token invalide")
+
+
+async def get_tx_user(user=Depends(get_current_user)):
+    """Clients must confirm their phone number before moving money (legacy accounts are exempt)."""
+    if user.get("role") not in NON_CLIENT_ROLES and user.get("phone_verified") is False:
+        raise HTTPException(403, "Confirmez votre numéro de téléphone pour effectuer des transactions")
+    return user
 
 
 async def get_admin(user=Depends(get_current_user)):
@@ -1214,14 +1269,17 @@ async def register(req: RegisterReq):
     
     otp = gen_otp()
     uid = gen_id()
+    reg_minutes = (await get_otp_settings(db))["registration_otp_minutes"]
     doc = {
         "id": uid, "phone": req.phone, "name": req.name, 
         "email": req.email.lower() if req.email else None,
         "password": hash_pw(req.password), "role": "client",
         "country": req.country, "language": req.language,
         "is_active": True, "is_verified": False, "kyc_status": "pending",
+        "email_verified": False, "phone_verified": False,
         "account_number": gen_account(), "referral_code": gen_ref(req.name),
-        "referred_by": referrer_id, "otp": otp, "profile_image": None,
+        "referred_by": referrer_id, "otp": otp, "otp_expires_at": expiry_iso(reg_minutes),
+        "email_otp": None, "email_otp_expires_at": None, "profile_image": None,
         "primary_card_id": linked_card["id"] if linked_card else None,
         "free_card_used": False,  # Track if free card has been used
         "max_wallets": 2,  # Maximum wallets allowed
@@ -1262,42 +1320,81 @@ async def register(req: RegisterReq):
             "reward_amount": 5.0, "status": "pending", "created_at": now_iso()
         })
     
-    # Send OTP via WhatsApp
+    # Send OTPs: WhatsApp (phone) and e-mail (when provided)
     try:
         await send_whatsapp_otp(req.phone, otp)
     except Exception as e:
         logger.error(f"Failed to send OTP via WhatsApp: {e}")
+    if doc["email"]:
+        await issue_registration_otps(doc, channels=("email",))
     
     logger.info(f"Registered: {req.phone}")
-    return {"message": "Inscription réussie. Un code OTP a été envoyé via WhatsApp.", "user_id": uid}
+    return {
+        "message": "Inscription réussie. Confirmez votre numéro ou votre adresse e-mail dans l'heure.",
+        "user_id": uid, "has_email": bool(doc["email"]),
+        "otp_valid_minutes": reg_minutes, "confirm_within_minutes": 60
+    }
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(req: OTPReq):
     user = await db.users.find_one({"phone": req.phone})
     if not user: raise HTTPException(404, "Utilisateur non trouvé")
-    if user.get("otp") != req.otp: raise HTTPException(400, "OTP incorrect")
-    await db.users.update_one({"phone": req.phone}, {"$set": {"is_verified": True, "otp": None}})
-    user.pop("_id", None); user.pop("password", None); user.pop("otp", None)
-    return {"token": create_token(user["id"], user["role"]), "user": user, "message": "Compte vérifié"}
+    if not user.get("otp") or user.get("otp") != req.otp: raise HTTPException(400, "OTP incorrect")
+    if is_expired(user.get("otp_expires_at")): raise HTTPException(400, "OTP expiré. Demandez un nouveau code.")
+    await db.users.update_one({"phone": req.phone}, {"$set": {"is_verified": True, "phone_verified": True, "otp": None, "otp_expires_at": None}})
+    user.pop("_id", None); user.pop("password", None); user.pop("otp", None); user.pop("email_otp", None)
+    user["is_verified"] = True; user["phone_verified"] = True
+    return {"token": create_token(user["id"], user["role"]), "user": user, "message": "Numéro confirmé"}
+
+
+@api_router.post("/auth/verify-email-otp")
+async def verify_email_otp(req: OTPReq):
+    """Confirm the e-mail address with the code sent at registration (identified by phone)."""
+    user = await db.users.find_one({"phone": req.phone})
+    if not user or not user.get("email_otp") or user.get("email_otp") != req.otp:
+        raise HTTPException(400, "Code e-mail incorrect")
+    if is_expired(user.get("email_otp_expires_at")):
+        raise HTTPException(400, "Code expiré. Demandez un nouveau code.")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"is_verified": True, "email_verified": True, "email_otp": None, "email_otp_expires_at": None}})
+    for k in ("_id", "password", "otp", "email_otp"):
+        user.pop(k, None)
+    user["is_verified"] = True; user["email_verified"] = True
+    return {"token": create_token(user["id"], user["role"]), "user": user, "message": "Adresse e-mail confirmée"}
 
 
 @api_router.post("/auth/resend-otp")
-async def resend_otp(phone: str = Body(..., embed=True)):
-    """Resend OTP via WhatsApp"""
+async def resend_otp(phone: str = Body(..., embed=True), channel: str = Body("phone", embed=True)):
+    """Resend a registration OTP (WhatsApp for phone, e-mail for email)"""
     user = await db.users.find_one({"phone": phone})
     if not user:
         raise HTTPException(404, "Utilisateur non trouvé")
-    
-    otp = str(random.randint(100000, 999999))
-    await db.users.update_one({"phone": phone}, {"$set": {"otp": otp}})
-    
-    # Send OTP via WhatsApp
-    try:
-        await send_whatsapp_otp(phone, otp)
-    except Exception as e:
-        logger.error(f"Failed to send OTP via WhatsApp: {e}")
-    
+    if channel == "email":
+        if not user.get("email") or user.get("email_verified") is True:
+            raise HTTPException(400, "Aucune adresse e-mail à confirmer")
+    elif user.get("phone_verified") is True or (user.get("is_verified") and "phone_verified" not in user):
+        raise HTTPException(400, "Numéro déjà confirmé")
+    await issue_registration_otps(user, channels=("email",) if channel == "email" else ("phone",))
+    return {"message": "Code envoyé par e-mail" if channel == "email" else "Code OTP envoyé via WhatsApp"}
+
+
+@api_router.post("/auth/phone/request-otp")
+async def request_phone_confirmation(u=Depends(get_current_user)):
+    """Authenticated: send a new WhatsApp OTP to confirm the phone number (unlocks transactions)."""
+    if u.get("phone_verified") is not False:
+        return {"message": "Numéro déjà confirmé"}
+    await issue_registration_otps(u, channels=("phone",))
     return {"message": "Code OTP envoyé via WhatsApp"}
+
+
+@api_router.post("/auth/phone/confirm")
+async def confirm_phone(otp: str = Body(..., embed=True), u=Depends(get_current_user)):
+    full = await db.users.find_one({"id": u["id"]})
+    if not full.get("otp") or full.get("otp") != otp:
+        raise HTTPException(400, "OTP incorrect")
+    if is_expired(full.get("otp_expires_at")):
+        raise HTTPException(400, "OTP expiré. Demandez un nouveau code.")
+    await db.users.update_one({"id": u["id"]}, {"$set": {"phone_verified": True, "otp": None, "otp_expires_at": None}})
+    return {"message": "Numéro confirmé. Les transactions sont débloquées."}
 
 
 @api_router.post("/auth/login")
@@ -1321,16 +1418,12 @@ async def login(req: LoginReq):
     # Registration OTP was never completed - block login and re-send OTP
     # instead of granting a session, so identity verification can't be skipped.
     if not user.get("is_verified"):
-        otp = gen_otp()
-        await db.users.update_one({"id": user["id"]}, {"$set": {"otp": otp}})
-        try:
-            await send_whatsapp_otp(user.get("phone"), otp)
-        except Exception as e:
-            logger.error(f"Failed to resend registration OTP: {e}")
+        await issue_registration_otps(user)
         return {
             "requires_otp_verification": True,
             "phone": user.get("phone"),
-            "message": "Veuillez confirmer votre inscription avec le code OTP envoyé via WhatsApp"
+            "has_email": bool(user.get("email")),
+            "message": "Veuillez confirmer votre inscription avec le code OTP envoyé via WhatsApp ou par e-mail"
         }
     
     # Check if 2FA is enabled
@@ -2078,6 +2171,43 @@ async def update_biometric_settings(req: BiometricSettingsReq, adm=Depends(get_a
     return {"message": "Paramètres biométriques mis à jour"}
 
 
+class OtpSettingsReq(BaseModel):
+    registration_otp_minutes: int
+    transaction_otp_minutes: int
+
+
+@api_router.get("/admin/otp/settings")
+async def get_otp_settings_route(adm=Depends(get_admin)):
+    check_permission(adm, "settings.view")
+    return {
+        **await get_otp_settings(db),
+        "registration_range": list(REGISTRATION_RANGE),
+        "transaction_range": list(TRANSACTION_RANGE),
+        "unconfirmed_account_ttl_minutes": 60,
+    }
+
+
+@api_router.put("/admin/otp/settings")
+async def update_otp_settings_route(req: OtpSettingsReq, adm=Depends(get_admin_with_kyc)):
+    if not is_original_primary_admin(adm):
+        raise HTTPException(403, "Seul l'administrateur principal peut modifier ces paramètres")
+    if not REGISTRATION_RANGE[0] <= req.registration_otp_minutes <= REGISTRATION_RANGE[1]:
+        raise HTTPException(400, f"Durée OTP d'inscription: {REGISTRATION_RANGE[0]} à {REGISTRATION_RANGE[1]} minutes")
+    if not TRANSACTION_RANGE[0] <= req.transaction_otp_minutes <= TRANSACTION_RANGE[1]:
+        raise HTTPException(400, f"Durée OTP de transaction: {TRANSACTION_RANGE[0]} à {TRANSACTION_RANGE[1]} minutes")
+    await db.admin_settings.update_one(
+        {"key": OTP_SETTINGS_KEY},
+        {"$set": {
+            "registration_otp_minutes": req.registration_otp_minutes,
+            "transaction_otp_minutes": req.transaction_otp_minutes,
+            "updated_at": now_iso(), "updated_by": adm["id"]
+        }},
+        upsert=True
+    )
+    await log_admin_activity(adm, "update", "settings", details={"setting": "otp_settings", "registration": req.registration_otp_minutes, "transaction": req.transaction_otp_minutes})
+    return {"message": "Durées OTP mises à jour"}
+
+
 # === WALLET ===
 # Mobile app compatible endpoints (alias)
 @api_router.get("/wallets")
@@ -2557,7 +2687,7 @@ async def transfer_preview(req: TransferReq, u=Depends(get_current_user)):
 
 
 @api_router.post("/wallet/transfer")
-async def transfer(req: TransferReq, u=Depends(get_current_user)):
+async def transfer(req: TransferReq, u=Depends(get_tx_user)):
     if req.amount <= 0: raise HTTPException(400, "Montant invalide")
     
     # Idempotency check
@@ -2717,7 +2847,7 @@ async def transfer(req: TransferReq, u=Depends(get_current_user)):
     return response
 
 @api_router.post("/wallet/recharge")
-async def recharge(req: RechargeReq, u=Depends(get_current_user)):
+async def recharge(req: RechargeReq, u=Depends(get_tx_user)):
     # Get rule for recharge
     user_country = u.get("country", "CD")
     rule = await get_transaction_rule(user_country, "recharge")
@@ -2752,7 +2882,7 @@ async def recharge(req: RechargeReq, u=Depends(get_current_user)):
     }
 
 @api_router.post("/wallet/withdraw")
-async def withdraw(req: WithdrawReq, u=Depends(get_current_user)):
+async def withdraw(req: WithdrawReq, u=Depends(get_tx_user)):
     w = await db.wallets.find_one({"user_id": u["id"], "currency": req.currency})
     if not w: raise HTTPException(400, "Portefeuille non trouvé")
     
@@ -2888,7 +3018,7 @@ async def create_savings_v2(req: SavingsReqV2, u=Depends(get_current_user)):
     return doc
 
 @api_router.post("/savings/{sid}/contribute")
-async def contribute_to_savings(sid: str, amount: Optional[float] = None, u=Depends(get_current_user)):
+async def contribute_to_savings(sid: str, amount: Optional[float] = None, u=Depends(get_tx_user)):
     """Manual contribution to savings"""
     s = await db.savings.find_one({"id": sid, "user_id": u["id"]})
     if not s:
@@ -2946,7 +3076,7 @@ async def update_savings_settings(sid: str, auto_debit: Optional[bool] = None, f
     return {"message": "Épargne mise à jour"}
 
 @api_router.delete("/savings/{sid}")
-async def withdraw_savings(sid: str, u=Depends(get_current_user)):
+async def withdraw_savings(sid: str, u=Depends(get_tx_user)):
     s = await db.savings.find_one({"id": sid, "user_id": u["id"]})
     if not s: raise HTTPException(404, "Épargne non trouvée")
     if s.get("status") == "completed": raise HTTPException(400, "Épargne déjà retirée")
@@ -3744,7 +3874,7 @@ async def send_group_message(group_id: str, content: str, u=Depends(get_current_
     return doc
 
 @api_router.post("/groups/{group_id}/contribute")
-async def contribute_to_group(group_id: str, amount: Optional[float] = None, u=Depends(get_current_user)):
+async def contribute_to_group(group_id: str, amount: Optional[float] = None, u=Depends(get_tx_user)):
     group = await db.groups.find_one({"id": group_id})
     if not group:
         raise HTTPException(404, "Groupe non trouvé")
@@ -4000,13 +4130,13 @@ async def reset_pin(background_tasks: BackgroundTasks, u=Depends(get_current_use
 
 
 @api_router.post("/mobile-money/recharge")
-async def mobile_money_recharge(req: MobileMoneyRechargeRequest, u=Depends(get_current_user)):
+async def mobile_money_recharge(req: MobileMoneyRechargeRequest, u=Depends(get_tx_user)):
     """Initiate mobile money recharge"""
     return await mobile_money_recharge_endpoint(req, u, db)
 
 
 @api_router.post("/mobile-money/withdraw")
-async def mobile_money_withdraw(req: MobileMoneyWithdrawRequest, u=Depends(get_current_user)):
+async def mobile_money_withdraw(req: MobileMoneyWithdrawRequest, u=Depends(get_tx_user)):
     """Initiate mobile money withdrawal"""
     return await mobile_money_withdraw_endpoint(req, u, db)
 
@@ -4319,7 +4449,7 @@ async def remove_from_rotation(group_id: str, user_id: str, u=Depends(get_curren
 
 
 @api_router.post("/groups/{group_id}/contribute-cycle")
-async def contribute_to_cycle(group_id: str, amount: Optional[float] = None, u=Depends(get_current_user)):
+async def contribute_to_cycle(group_id: str, amount: Optional[float] = None, u=Depends(get_tx_user)):
     """Contribute to the current cycle's pot"""
     group = await db.groups.find_one({"id": group_id})
     if not group:
@@ -4390,7 +4520,7 @@ async def contribute_to_cycle(group_id: str, amount: Optional[float] = None, u=D
 
 
 @api_router.post("/groups/{group_id}/payout")
-async def execute_payout(group_id: str, req: PayoutReq, u=Depends(get_current_user)):
+async def execute_payout(group_id: str, req: PayoutReq, u=Depends(get_tx_user)):
     """Execute payout to the current beneficiary (admin only)"""
     group = await db.groups.find_one({"id": group_id})
     if not group:
@@ -5110,7 +5240,7 @@ async def get_available_integrations(u=Depends(get_current_user)):
 
 
 @api_router.post("/integrations/transaction")
-async def execute_integration_transaction(req: IntegrationTransactionReq, u=Depends(get_current_user)):
+async def execute_integration_transaction(req: IntegrationTransactionReq, u=Depends(get_tx_user)):
     """Execute a transaction via an integration (deposit/withdrawal)"""
     
     # Get integration
@@ -5468,6 +5598,8 @@ async def startup():
         await db.idempotency_keys.create_index("created_at", expireAfterSeconds=86400)
     except Exception:
         pass  # Index may already exist
+
+    app.state.cleanup_task = asyncio.create_task(unconfirmed_cleanup_loop())
 
     if not await db.users.find_one({"phone": "+243100000001"}):
         did = gen_id()

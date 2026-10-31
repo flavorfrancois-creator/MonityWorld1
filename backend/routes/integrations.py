@@ -123,9 +123,13 @@ async def send_otp_endpoint(req: SendOTPRequest, db, background_tasks: Backgroun
     # Check if user exists
     user = await db.users.find_one({"phone": req.phone})
     
-    # Generate OTP
+    # Generate OTP; duration is set by the administrator
+    from utils.otp_settings import get_otp_settings
+    otp_cfg = await get_otp_settings(db)
+    otp_minutes = otp_cfg["transaction_otp_minutes"] if req.purpose == "transaction" else (
+        otp_cfg["registration_otp_minutes"] if req.purpose == "verification" else 10)
     otp_code = gen_otp()
-    otp_expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    otp_expires = datetime.now(timezone.utc) + timedelta(minutes=otp_minutes)
     
     # Store OTP in database
     await db.otp_codes.update_one(
@@ -163,7 +167,7 @@ async def send_otp_endpoint(req: SendOTPRequest, db, background_tasks: Backgroun
                     "success": True,
                     "message": "OTP généré (mode développement)",
                     "otp": otp_code,  # Only in development!
-                    "expires_in_minutes": 10,
+                    "expires_in_minutes": otp_minutes,
                     "sms_status": "failed",
                     "sms_error": result.error
                 }
@@ -172,7 +176,7 @@ async def send_otp_endpoint(req: SendOTPRequest, db, background_tasks: Backgroun
         return {
             "success": True,
             "message": f"Code OTP envoyé à {req.phone}",
-            "expires_in_minutes": 10,
+            "expires_in_minutes": otp_minutes,
             "sms_status": "sent",
             "provider": result.provider
         }
@@ -183,7 +187,7 @@ async def send_otp_endpoint(req: SendOTPRequest, db, background_tasks: Backgroun
             "success": True,
             "message": "OTP généré (SMS désactivé)",
             "otp": otp_code,  # Only in development!
-            "expires_in_minutes": 10,
+            "expires_in_minutes": otp_minutes,
             "note": "Activez ENABLE_SMS_OTP=true pour envoyer de vrais SMS"
         }
 

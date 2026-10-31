@@ -5,6 +5,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Settings, Shield, Globe, DollarSign, Bell, Save, ExternalLink } from 'lucide-react';
+import OtpSettingsPanel from './OtpSettingsPanel';
 
 export default function AdminSettings() {
   const [fees, setFees] = useState({ transfer: '1.0', withdrawal: '1.5', recharge: '0' });
@@ -25,6 +26,9 @@ export default function AdminSettings() {
         <h2 className="text-xl font-bold text-foreground" style={{fontFamily:'Manrope'}}>Paramètres du système</h2>
         <p className="text-sm text-muted-foreground mt-1">Configuration globale de la plateforme</p>
       </div>
+
+      {/* OTP durations */}
+      <OtpSettingsPanel />
 
       {/* Fees */}
       <div className="bg-card border border-border rounded-xl p-5 animate-fade-in-up stagger-1">

@@ -9,6 +9,7 @@ import {
   CreditCard, Link2, UserCog, ShoppingCart, Smartphone
 } from 'lucide-react';
 import { Badge } from './ui/badge';
+import PhoneConfirmBanner from './PhoneConfirmBanner';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import {
@@ -287,6 +288,7 @@ export default function Layout({ children }) {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto pb-20 lg:pb-0">
+          <PhoneConfirmBanner user={user} />
           {children}
         </main>
 

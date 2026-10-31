@@ -39,6 +39,8 @@ export default function AuthPage() {
   const [otpModal, setOtpModal] = useState(false);
   const [otpValue, setOtpValue] = useState('');
   const [registeredPhone, setRegisteredPhone] = useState('');
+  const [hasEmail, setHasEmail] = useState(false);
+  const [emailOtpValue, setEmailOtpValue] = useState('');
   const [countries, setCountries] = useState(DEFAULT_COUNTRIES);
   
   // Forgot password states
@@ -118,8 +120,9 @@ export default function AuthPage() {
       // Registration was never confirmed by OTP - reuse the OTP modal to finish it
       if (res.data.requires_otp_verification) {
         setRegisteredPhone(res.data.phone);
+        setHasEmail(!!res.data.has_email);
         setOtpModal(true);
-        toast.info(res.data.message || 'Veuillez confirmer votre compte avec le code OTP envoyé via WhatsApp');
+        toast.info(res.data.message || 'Veuillez confirmer votre compte avec le code OTP');
       } else if (res.data.requires_2fa) {
         setPendingLoginData(res.data);
         setShow2FAModal(true);
@@ -171,10 +174,11 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const payload = { ...regData, phone: fullPhone, accept_terms: true, terms_version: TERMS_VERSION };
-      await API.post('/auth/register', payload);
+      const res = await API.post('/auth/register', payload);
       setRegisteredPhone(fullPhone);
+      setHasEmail(!!res.data?.has_email);
       setOtpModal(true);
-      toast.success('Inscription réussie ! Un code OTP a été envoyé via WhatsApp.');
+      toast.success('Inscription réussie ! Confirmez votre numéro ou votre e-mail dans l\'heure.');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur lors de l\'inscription');
     } finally { setLoading(false); }
@@ -186,10 +190,23 @@ export default function AuthPage() {
     try {
       const res = await API.post('/auth/verify-otp', { phone: registeredPhone, otp: otpValue });
       login(res.data.token, res.data.user);
-      toast.success('Compte vérifié avec succès !');
+      toast.success('Numéro confirmé, compte créé !');
       navigate('/dashboard');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'OTP incorrect');
+    } finally { setLoading(false); }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    if (!emailOtpValue || emailOtpValue.length !== 6) { toast.error('Entrez le code à 6 chiffres reçu par e-mail'); return; }
+    setLoading(true);
+    try {
+      const res = await API.post('/auth/verify-email-otp', { phone: registeredPhone, otp: emailOtpValue });
+      login(res.data.token, res.data.user);
+      toast.success('E-mail confirmé, compte créé ! Confirmez votre numéro pour débloquer les transactions.');
+      navigate('/dashboard');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Code incorrect');
     } finally { setLoading(false); }
   };
 
@@ -209,12 +226,12 @@ export default function AuthPage() {
     } finally { setLoading(false); }
   };
 
-  const resendOtp = async () => {
+  const resendOtp = async (channel = 'phone') => {
     if (!registeredPhone) return;
     setLoading(true);
     try {
-      await API.post('/auth/resend-otp', { phone: registeredPhone });
-      toast.success('Nouveau code OTP envoyé via WhatsApp');
+      await API.post('/auth/resend-otp', { phone: registeredPhone, channel });
+      toast.success(channel === 'email' ? 'Nouveau code envoyé par e-mail' : 'Nouveau code OTP envoyé via WhatsApp');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur');
     } finally { setLoading(false); }
@@ -357,11 +374,11 @@ export default function AuthPage() {
               
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
                 <p className="text-xs text-blue-400">
-                  Un code OTP à 6 chiffres a été envoyé via WhatsApp à votre numéro de téléphone.
+                  Confirmez votre numéro (code WhatsApp){hasEmail ? ' ou votre adresse e-mail (code reçu par e-mail)' : ''} dans l'heure. Sans confirmation, votre inscription est supprimée. Le numéro doit être confirmé pour effectuer des transactions.
                 </p>
               </div>
 
-              <Label className="text-sm text-muted-foreground mb-2 block">Entrez votre code OTP</Label>
+              <Label className="text-sm text-muted-foreground mb-2 block">Code OTP WhatsApp</Label>
               <Input
                 value={otpValue}
                 onChange={e => setOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -378,12 +395,37 @@ export default function AuthPage() {
               </div>
               <button 
                 type="button" 
-                className="w-full text-center text-xs text-primary hover:underline"
-                onClick={resendOtp}
+                className="w-full text-center text-xs text-primary hover:underline mb-3"
+                onClick={() => resendOtp('phone')}
                 disabled={loading}
               >
                 Renvoyer le code OTP
               </button>
+
+              {hasEmail && (
+                <div className="border-t border-border pt-4">
+                  <Label className="text-sm text-muted-foreground mb-2 block">Code reçu par e-mail</Label>
+                  <Input
+                    value={emailOtpValue}
+                    onChange={e => setEmailOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="text-center text-2xl font-bold tracking-widest h-14 mb-3"
+                    maxLength={6}
+                    data-testid="email-otp-input"
+                  />
+                  <Button className="w-full btn-primary-glow mb-3" onClick={handleVerifyEmailOtp} disabled={loading} data-testid="email-otp-verify-btn">
+                    Confirmer l'e-mail
+                  </Button>
+                  <button
+                    type="button"
+                    className="w-full text-center text-xs text-primary hover:underline"
+                    onClick={() => resendOtp('email')}
+                    disabled={loading}
+                  >
+                    Renvoyer le code par e-mail
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

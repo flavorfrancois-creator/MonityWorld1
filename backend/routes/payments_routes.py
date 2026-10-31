@@ -259,9 +259,14 @@ async def request_validation_code(link_code: str, sender_phone: str):
     if not sender:
         raise HTTPException(404, "Ce numéro de téléphone n'est pas enregistré sur Monity. L'utilisateur doit d'abord créer un compte.")
     
+    if sender.get("phone_verified") is False:
+        raise HTTPException(403, "Le numéro de téléphone de ce compte n'est pas confirmé")
+    
     # Generate validation code
+    from utils.otp_settings import get_otp_settings
+    otp_minutes = (await get_otp_settings(db))["transaction_otp_minutes"]
     validation_code = gen_otp()
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=otp_minutes)).isoformat()
     
     # Store the validation code
     await db.ecommerce_validations.insert_one({
@@ -279,7 +284,7 @@ async def request_validation_code(link_code: str, sender_phone: str):
     await db.notifications.insert_one({
         "id": gen_id(),
         "user_id": sender["id"],
-        "message": f"Code de validation pour paiement e-commerce: {validation_code} (valide 10 min)",
+        "message": f"Code de validation pour paiement e-commerce: {validation_code} (valide {otp_minutes} min)",
         "type": "ecommerce_validation",
         "data": {
             "link_code": link_code,
@@ -294,7 +299,7 @@ async def request_validation_code(link_code: str, sender_phone: str):
     
     return {
         "message": "Code de validation envoyé dans le compte Monity de l'utilisateur",
-        "expires_in_minutes": 10,
+        "expires_in_minutes": otp_minutes,
         "user_phone": sender_phone[:6] + "****"  # Masked phone
     }
 
