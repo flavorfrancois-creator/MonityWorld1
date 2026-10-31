@@ -35,6 +35,7 @@ const ADMIN_NAV = [
   { path: '/admin/bank-cards', icon: Wallet, label: 'Cartes Bancaires', permission: 'primary_admin_only' },
   { path: '/admin/nfc-subscriptions', icon: CalendarClock, label: 'Abonnements NFC', permission: 'primary_admin_only' },
   { path: '/admin/settings', icon: Settings, label: 'Paramètres', permission: 'settings.view' },
+  { path: '/admin/my-account', icon: UserCheck, label: 'Mon compte' },
 ];
 
 export default function AdminLayout({ children }) {

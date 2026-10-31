@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
+import MyAccountPanel from '../components/MyAccountPanel';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -650,6 +651,8 @@ export default function ProfilePage() {
           </Button>
         </CardContent>
       </Card>
+
+      <MyAccountPanel basics={false} />
 
       {/* Password Change Dialog */}
       <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>

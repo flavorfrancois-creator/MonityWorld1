@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import TermsDialog, { TERMS_VERSION } from '../components/TermsDialog';
+import RestoreAccountLink from '../components/RestoreAccountLink';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Eye, EyeOff, Phone, Lock, User, Globe, ArrowRight, ShieldCheck, CreditCard, Mail, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
@@ -546,6 +547,7 @@ export default function AuthPage() {
                   {loading ? <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" /> : <><span>Se connecter</span><ArrowRight size={16} className="ml-2" /></>}
                 </Button>
               </form>
+              <RestoreAccountLink />
             </TabsContent>
 
             {/* REGISTER */}

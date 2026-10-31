@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import RestoreAccountLink from '../../components/RestoreAccountLink';
 import { Eye, EyeOff, Shield, Lock, Mail, Phone, AlertTriangle } from 'lucide-react';
 
 export default function AdminLoginPage() {
@@ -288,6 +289,7 @@ export default function AdminLoginPage() {
               )}
             </Button>
           </form>
+          <div className="text-center"><RestoreAccountLink /></div>
 
           {!resetMode ? (
             <button type="button" onClick={requestReset} className="w-full mt-4 text-sm text-amber-400 hover:text-amber-300">

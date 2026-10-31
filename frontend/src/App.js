@@ -37,6 +37,7 @@ import AdminNFCCardLimits from './pages/admin/AdminNFCCardLimits';
 import AdminVirtualCards from './pages/admin/AdminVirtualCards';
 import AdminAdministrators from './pages/admin/AdminAdministrators';
 import AdminSettings from './pages/admin/AdminSettings';
+import MyAccountPanel from './components/MyAccountPanel';
 import AdminTransactionRules from './pages/admin/AdminTransactionRules';
 import AdminCountryCurrencies from './pages/admin/AdminCountryCurrencies';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
@@ -130,6 +131,7 @@ function AppRoutes() {
       <Route path="/admin/nfc-subscriptions" element={<AdminRoute><AdminLayout><AdminNFCSubscriptions /></AdminLayout></AdminRoute>} />
       <Route path="/admin/api-integrations" element={<AdminRoute><AdminLayout><AdminApiIntegrations /></AdminLayout></AdminRoute>} />
       <Route path="/admin/settings" element={<AdminRoute><AdminLayout><AdminSettings /></AdminLayout></AdminRoute>} />
+      <Route path="/admin/my-account" element={<AdminRoute><AdminLayout><div className="max-w-2xl space-y-4"><h1 className="text-2xl font-bold">Mon compte</h1><MyAccountPanel basics /></div></AdminLayout></AdminRoute>} />
       {/* Partner Routes */}
       <Route path="/partner/login" element={<PartnerLogin />} />
       <Route path="/partner" element={<PartnerLayout><PartnerDashboard /></PartnerLayout>} />

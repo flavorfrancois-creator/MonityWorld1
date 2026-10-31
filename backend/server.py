@@ -50,11 +50,13 @@ from utils.auth import (
     KYC_REQUIRED_OPERATIONS
 )
 from utils.whatsapp import send_whatsapp_otp, send_whatsapp_message
+from utils.email import send_email
 from utils.otp_settings import (
     get_otp_settings, expiry_iso, is_expired, purge_unconfirmed_accounts,
     REGISTRATION_RANGE, TRANSACTION_RANGE, SETTINGS_KEY as OTP_SETTINGS_KEY
 )
 import asyncio
+from utils import account_lifecycle
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -166,8 +168,9 @@ async def unconfirmed_cleanup_loop():
     while True:
         try:
             await purge_unconfirmed_accounts(db)
+            await account_lifecycle.purge_expired_deleted_accounts(db)
         except Exception as e:
-            logger.error(f"Unconfirmed accounts cleanup failed: {e}")
+            logger.error(f"Account cleanup failed: {e}")
         await asyncio.sleep(300)
 
 
@@ -418,6 +421,8 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password": 0})
         if not user:
             raise HTTPException(401, "Utilisateur non trouvé")
+        if user.get("is_deleted"):
+            raise HTTPException(401, "Compte supprimé")
         if user.get("is_suspended") or user.get("is_active") is False:
             raise HTTPException(403, "Votre compte est suspendu")
         # Session enforcement: check if session_id matches
@@ -1230,10 +1235,13 @@ async def get_countries():
 async def register(req: RegisterReq):
     if not req.accept_terms:
         raise HTTPException(400, "Vous devez accepter les Conditions Générales d'Utilisation pour créer un compte")
+    await account_lifecycle.release_expired_contacts(db, req.phone, req.email)
+    if await db.users.find_one({"phone": req.phone, "is_deleted": True}):
+        raise HTTPException(400, "Ce numéro appartient à un compte supprimé depuis moins de 3 mois. Utilisez « Restaurer mon compte » ou réessayez plus tard.")
+    if req.email and await db.users.find_one({"email": req.email.lower(), "is_deleted": True}):
+        raise HTTPException(400, "Cet email appartient à un compte supprimé depuis moins de 3 mois. Utilisez « Restaurer mon compte » ou réessayez plus tard.")
     if await db.users.find_one({"phone": req.phone}):
         raise HTTPException(400, "Ce numéro est déjà enregistré")
-    
-    # Check if email already exists
     if req.email:
         if await db.users.find_one({"email": req.email.lower()}):
             raise HTTPException(400, "Cet email est déjà enregistré")
@@ -1413,6 +1421,8 @@ async def login(req: LoginReq):
     if user.get("role") in NON_CLIENT_ROLES:
         raise HTTPException(401, "Identifiants incorrects")
     
+    if user.get("is_deleted"):
+        raise HTTPException(403, deleted_account_message(user))
     if not user.get("is_active"): raise HTTPException(403, "Compte suspendu")
     
     # Registration OTP was never completed - block login and re-send OTP
@@ -1514,6 +1524,8 @@ async def admin_login(req: LoginReq):
     if user.get("role") not in NON_CLIENT_ROLES:
         raise HTTPException(401, "Identifiants incorrects")
     
+    if user.get("is_deleted"):
+        raise HTTPException(403, deleted_account_message(user))
     if not user.get("is_active"): raise HTTPException(403, "Compte suspendu")
     if user.get("is_suspended"): raise HTTPException(403, "Compte suspendu")
     
@@ -1720,15 +1732,11 @@ async def me(u=Depends(get_current_user)): return u
 @api_router.patch("/auth/profile")
 async def update_profile(req: ProfileUpdateReq, u=Depends(get_current_user)):
     """Update user profile"""
+    if req.email and req.email.lower() != (u.get("email") or "").lower():
+        raise HTTPException(400, "Le changement d'email nécessite une vérification par code (Mon compte)")
     update = {}
     if req.name: update["name"] = req.name
     if req.language: update["language"] = req.language
-    if req.email:
-        # Check if email already exists
-        existing = await db.users.find_one({"email": req.email.lower(), "id": {"$ne": u["id"]}})
-        if existing:
-            raise HTTPException(400, "Cet email est déjà utilisé")
-        update["email"] = req.email.lower()
     
     if update:
         update["updated_at"] = now_iso()
@@ -1761,6 +1769,211 @@ async def upload_profile_image(file: UploadFile = File(...), u=Depends(get_curre
     await db.users.update_one({"id": u["id"]}, {"$set": {"profile_image": image_url, "profile_image_storage": storage_path}})
     
     return {"message": "Photo de profil mise à jour", "profile_image": image_url}
+
+
+# === MON COMPTE: contact changes, deletion and restoration ===
+def deleted_account_message(user: dict) -> str:
+    if account_lifecycle.can_restore(user):
+        return "Compte supprimé. Vous pouvez le restaurer avec « Restaurer mon compte » pendant 6 mois après la suppression."
+    return "Compte supprimé"
+
+
+async def _send_account_code(user: dict, channel: str, code: str, label: str, minutes: int, email=None, phone=None):
+    """Send a code by e-mail or WhatsApp/SMS; raise 502 when it could not be delivered."""
+    text = f"Monity World - {label}\n\nVotre code : {code}\n\nValable {minutes} minutes. Ne le partagez avec personne."
+    if channel == "email":
+        target = email or user.get("email")
+        if not target:
+            raise HTTPException(400, "Aucune adresse email sur ce compte")
+        ok = await send_email(target, f"Monity World - {label}", text, user.get("country"))
+    else:
+        target = phone or user.get("phone")
+        res = await send_whatsapp_message(target, text, user.get("country"))
+        ok = bool(res) and res.get("success", True) is not False
+    if ok is False:
+        raise HTTPException(502, "Impossible d'envoyer le code. Réessayez plus tard.")
+
+
+class ContactChangeReq(BaseModel):
+    new_email: Optional[str] = None
+    new_phone: Optional[str] = None
+    password: str
+
+class CodeReq(BaseModel):
+    code: str
+
+class DeleteRequestReq(BaseModel):
+    channel: str = "email"
+    password: str
+
+class DeleteConfirmReq(BaseModel):
+    code: str
+    password: str
+
+class RestoreRequestReq(BaseModel):
+    identifier: str
+
+class RestoreConfirmReq(BaseModel):
+    identifier: str
+    code: str
+
+
+@api_router.post("/account/email/request")
+async def account_email_request(req: ContactChangeReq, u=Depends(get_current_user)):
+    full = await db.users.find_one({"id": u["id"]})
+    if not req.new_email or "@" not in req.new_email:
+        raise HTTPException(400, "Adresse email invalide")
+    if not verify_pw(req.password, full["password"]):
+        raise HTTPException(401, "Mot de passe incorrect")
+    new_email = req.new_email.strip().lower()
+    await account_lifecycle.release_expired_contacts(db, email=new_email)
+    if await db.users.find_one({"email": new_email, "id": {"$ne": u["id"]}}):
+        raise HTTPException(400, "Cette adresse email est déjà utilisée")
+    minutes = (await get_otp_settings(db))["transaction_otp_minutes"]
+    code = await account_lifecycle.issue_code(db, u["id"], "change_email", minutes, {"email": new_email})
+    await _send_account_code(u, "email", code, "Confirmation de la nouvelle adresse email", minutes, email=new_email)
+    return {"message": "Code envoyé à la nouvelle adresse email", "expires_in_minutes": minutes}
+
+
+@api_router.post("/account/email/confirm")
+async def account_email_confirm(req: CodeReq, u=Depends(get_current_user)):
+    try:
+        payload = await account_lifecycle.consume_code(db, u["id"], "change_email", req.code)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    new_email = payload["email"]
+    if await db.users.find_one({"email": new_email, "id": {"$ne": u["id"]}}):
+        raise HTTPException(400, "Cette adresse email est déjà utilisée")
+    await db.users.update_one({"id": u["id"]}, {"$set": {"email": new_email, "email_verified": True, "updated_at": now_iso()}})
+    return {"message": "Adresse email mise à jour", "email": new_email}
+
+
+@api_router.post("/account/phone/request")
+async def account_phone_request(req: ContactChangeReq, u=Depends(get_current_user)):
+    full = await db.users.find_one({"id": u["id"]})
+    new_phone = (req.new_phone or "").strip()
+    if not new_phone.startswith("+") or len(new_phone) < 8:
+        raise HTTPException(400, "Numéro invalide (format international, ex. +243...)")
+    if not verify_pw(req.password, full["password"]):
+        raise HTTPException(401, "Mot de passe incorrect")
+    await account_lifecycle.release_expired_contacts(db, phone=new_phone)
+    if await db.users.find_one({"phone": new_phone, "id": {"$ne": u["id"]}}):
+        raise HTTPException(400, "Ce numéro est déjà utilisé")
+    minutes = (await get_otp_settings(db))["transaction_otp_minutes"]
+    code = await account_lifecycle.issue_code(db, u["id"], "change_phone", minutes, {"phone": new_phone})
+    await _send_account_code(u, "phone", code, "Confirmation du nouveau numéro", minutes, phone=new_phone)
+    return {"message": "Code envoyé au nouveau numéro", "expires_in_minutes": minutes}
+
+
+@api_router.post("/account/phone/confirm")
+async def account_phone_confirm(req: CodeReq, u=Depends(get_current_user)):
+    try:
+        payload = await account_lifecycle.consume_code(db, u["id"], "change_phone", req.code)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    new_phone = payload["phone"]
+    if await db.users.find_one({"phone": new_phone, "id": {"$ne": u["id"]}}):
+        raise HTTPException(400, "Ce numéro est déjà utilisé")
+    await db.users.update_one({"id": u["id"]}, {"$set": {"phone": new_phone, "phone_verified": True, "updated_at": now_iso()}})
+    return {"message": "Numéro de téléphone mis à jour", "phone": new_phone}
+
+
+@api_router.post("/account/delete/request")
+async def account_delete_request(req: DeleteRequestReq, u=Depends(get_current_user)):
+    full = await db.users.find_one({"id": u["id"]})
+    if not verify_pw(req.password, full["password"]):
+        raise HTTPException(401, "Mot de passe incorrect")
+    if u.get("role") == "primary_admin" or u.get("is_super_admin"):
+        raise HTTPException(403, "Le compte administrateur principal ne peut pas être supprimé")
+    if req.channel not in ("email", "phone"):
+        raise HTTPException(400, "Canal invalide")
+    if req.channel == "email" and not u.get("email"):
+        raise HTTPException(400, "Aucune adresse email sur ce compte")
+    minutes = (await get_otp_settings(db))["transaction_otp_minutes"]
+    code = await account_lifecycle.issue_code(db, u["id"], "delete_account", minutes)
+    await _send_account_code(u, req.channel, code, "Suppression de votre compte", minutes)
+    return {"message": "Code de confirmation envoyé", "expires_in_minutes": minutes}
+
+
+@api_router.post("/account/delete/confirm")
+async def account_delete_confirm(req: DeleteConfirmReq, u=Depends(get_current_user)):
+    full = await db.users.find_one({"id": u["id"]})
+    if not verify_pw(req.password, full["password"]):
+        raise HTTPException(401, "Mot de passe incorrect")
+    if u.get("role") == "primary_admin" or u.get("is_super_admin"):
+        raise HTTPException(403, "Le compte administrateur principal ne peut pas être supprimé")
+    funded = await db.wallets.find_one({"user_id": u["id"], "balance": {"$gt": 0}})
+    if funded:
+        raise HTTPException(400, "Videz vos portefeuilles (solde > 0) avant de supprimer votre compte")
+    try:
+        await account_lifecycle.consume_code(db, u["id"], "delete_account", req.code)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    deleted_at = now_iso()
+    await db.users.update_one({"id": u["id"]}, {"$set": {
+        "is_deleted": True, "deleted_at": deleted_at,
+        "pre_delete_active": full.get("is_active", True),
+        "is_active": False, "active_session_id": None,
+    }})
+    notice = ("Monity World - Compte supprimé\n\nVotre compte a été supprimé. Vous n'y avez plus accès. "
+              "Pendant 6 mois, vous pouvez demander sa restauration depuis l'écran de connexion (« Restaurer mon compte »). "
+              "Ce numéro et cette adresse email ne peuvent pas ouvrir un nouveau compte pendant 3 mois.")
+    for coro in (
+        send_email(full["email"], "Monity World - Compte supprimé", notice, full.get("country")) if full.get("email") else None,
+        send_whatsapp_message(full["phone"], notice, full.get("country")) if full.get("phone") else None,
+    ):
+        if coro is None:
+            continue
+        try:
+            await coro
+        except Exception as e:
+            logger.warning(f"Deletion notice failed: {e}")
+    return {"message": "Compte supprimé"}
+
+
+async def _find_deleted_user(identifier: str):
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    return await db.users.find_one(
+        {"is_deleted": True, "$or": [{"phone": ident}, {"email": ident.lower()}]}
+    )
+
+
+@api_router.post("/auth/account/restore/request")
+async def restore_request(req: RestoreRequestReq):
+    generic = {"message": "Si un compte supprimé correspond, un code de restauration vient d'être envoyé."}
+    user = await _find_deleted_user(req.identifier)
+    if not user or not account_lifecycle.can_restore(user):
+        return generic
+    recent = await db.account_otps.find_one({"user_id": user["id"], "purpose": "restore_account"})
+    if recent and account_lifecycle._parse(recent.get("created_at")) > datetime.now(timezone.utc) - timedelta(seconds=60):
+        return generic
+    minutes = (await get_otp_settings(db))["transaction_otp_minutes"]
+    code = await account_lifecycle.issue_code(db, user["id"], "restore_account", minutes)
+    channel = "email" if "@" in req.identifier and user.get("email") else "phone"
+    try:
+        await _send_account_code(user, channel, code, "Restauration de votre compte", minutes)
+    except HTTPException:
+        logger.warning("Restore code delivery failed")
+    return generic
+
+
+@api_router.post("/auth/account/restore/confirm")
+async def restore_confirm(req: RestoreConfirmReq):
+    user = await _find_deleted_user(req.identifier)
+    if not user or not account_lifecycle.can_restore(user):
+        raise HTTPException(400, "Code incorrect ou expiré")
+    try:
+        await account_lifecycle.consume_code(db, user["id"], "restore_account", req.code)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"is_active": user.get("pre_delete_active", True), "restored_at": now_iso()},
+         "$unset": {"is_deleted": "", "deleted_at": "", "pre_delete_active": ""}},
+    )
+    return {"message": "Compte restauré. Vous pouvez vous connecter."}
 
 
 # === BIOMETRIC AUTHENTICATION (WebAuthn) ===
@@ -5601,7 +5814,7 @@ async def startup():
 
     app.state.cleanup_task = asyncio.create_task(unconfirmed_cleanup_loop())
 
-    if not await db.users.find_one({"phone": "+243100000001"}):
+    if os.environ.get("SEED_DEMO_DATA") == "true" and not await db.users.find_one({"phone": "+243100000001"}):
         did = gen_id()
         now_dt = datetime.now(timezone.utc)
         await db.users.insert_one({

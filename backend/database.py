@@ -66,6 +66,8 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(securit
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password": 0})
         if not user:
             raise HTTPException(401, "Utilisateur non trouvé")
+        if user.get("is_deleted"):
+            raise HTTPException(401, "Compte supprimé")
         # Session enforcement: check if session_id matches
         token_sid = payload.get("sid")
         if token_sid and user.get("active_session_id") and token_sid != user.get("active_session_id"):
