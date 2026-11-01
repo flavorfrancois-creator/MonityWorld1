@@ -42,6 +42,9 @@ export default function AuthPage() {
   const [registeredPhone, setRegisteredPhone] = useState('');
   const [hasEmail, setHasEmail] = useState(false);
   const [emailOtpValue, setEmailOtpValue] = useState('');
+  const [otpStep, setOtpStep] = useState('phone');
+  const [phoneConfirmed, setPhoneConfirmed] = useState(false);
+  const [pendingAuth, setPendingAuth] = useState(null);
   const [countries, setCountries] = useState(DEFAULT_COUNTRIES);
   
   // Forgot password states
@@ -122,7 +125,7 @@ export default function AuthPage() {
       if (res.data.requires_otp_verification) {
         setRegisteredPhone(res.data.phone);
         setHasEmail(!!res.data.has_email);
-        setOtpModal(true);
+        openOtpFlow();
         toast.info(res.data.message || 'Veuillez confirmer votre compte avec le code OTP');
       } else if (res.data.requires_2fa) {
         setPendingLoginData(res.data);
@@ -178,34 +181,54 @@ export default function AuthPage() {
       const res = await API.post('/auth/register', payload);
       setRegisteredPhone(fullPhone);
       setHasEmail(!!res.data?.has_email);
-      setOtpModal(true);
-      toast.success('Inscription réussie ! Confirmez votre numéro ou votre e-mail dans l\'heure.');
+      openOtpFlow();
+      toast.success('Inscription réussie ! Confirmez votre numéro de téléphone.');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur lors de l\'inscription');
     } finally { setLoading(false); }
   };
 
+  const openOtpFlow = () => {
+    setOtpValue(''); setEmailOtpValue('');
+    setOtpStep('phone'); setPhoneConfirmed(false); setPendingAuth(null);
+    setOtpModal(true);
+  };
+
+  const finishAuth = (auth) => {
+    login(auth.token, auth.user);
+    setOtpModal(false);
+    navigate('/dashboard');
+  };
+
+  // Step 1 -> "Suivant": phone code verified, then move on to the e-mail step (or finish)
   const handleVerifyOtp = async () => {
     if (!otpValue || otpValue.length !== 6) { toast.error('Entrez un OTP à 6 chiffres'); return; }
     setLoading(true);
     try {
       const res = await API.post('/auth/verify-otp', { phone: registeredPhone, otp: otpValue });
-      login(res.data.token, res.data.user);
-      toast.success('Numéro confirmé, compte créé !');
-      navigate('/dashboard');
+      setPhoneConfirmed(true);
+      setPendingAuth(res.data);
+      toast.success('Numéro confirmé');
+      if (hasEmail) setOtpStep('email');
+      else finishAuth(res.data);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'OTP incorrect');
     } finally { setLoading(false); }
   };
+
+  // "Skip" on the phone step: code not received, continue with e-mail confirmation
+  const skipPhoneStep = () => { setOtpStep('email'); };
+
+  // "Skip" on the e-mail step is only available once the phone is confirmed
+  const skipEmailStep = () => { if (phoneConfirmed && pendingAuth) finishAuth(pendingAuth); };
 
   const handleVerifyEmailOtp = async () => {
     if (!emailOtpValue || emailOtpValue.length !== 6) { toast.error('Entrez le code à 6 chiffres reçu par e-mail'); return; }
     setLoading(true);
     try {
       const res = await API.post('/auth/verify-email-otp', { phone: registeredPhone, otp: emailOtpValue });
-      login(res.data.token, res.data.user);
-      toast.success('E-mail confirmé, compte créé ! Confirmez votre numéro pour débloquer les transactions.');
-      navigate('/dashboard');
+      toast.success(phoneConfirmed ? 'E-mail confirmé !' : 'E-mail confirmé. Confirmez votre numéro pour débloquer les transactions.');
+      finishAuth(res.data);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Code incorrect');
     } finally { setLoading(false); }
@@ -368,55 +391,78 @@ export default function AuthPage() {
                   <ShieldCheck size={20} className="text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-foreground" style={{fontFamily:'Manrope'}}>Vérification OTP</h3>
-                  <p className="text-xs text-muted-foreground">{registeredPhone}</p>
+                  <h3 className="font-bold text-foreground" style={{fontFamily:'Manrope'}}>
+                    {otpStep === 'phone' ? 'Confirmation du numéro' : 'Confirmation de l\'e-mail'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">{otpStep === 'phone' ? registeredPhone : 'Étape 2 sur 2'}</p>
                 </div>
               </div>
               
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
                 <p className="text-xs text-blue-400">
-                  Confirmez votre numéro (code WhatsApp){hasEmail ? ' ou votre adresse e-mail (code reçu par e-mail)' : ''} dans l'heure. Sans confirmation, votre inscription est supprimée. Le numéro doit être confirmé pour effectuer des transactions.
+                  {otpStep === 'phone'
+                    ? 'Saisissez le code reçu par WhatsApp. Ce code ne sert qu\'à confirmer ce numéro. Sans confirmation dans l\'heure, votre inscription est supprimée.'
+                    : phoneConfirmed
+                      ? 'Numéro confirmé. Vous pouvez confirmer votre e-mail avec le code reçu, ou passer cette étape.'
+                      : 'Numéro non confirmé : la confirmation de l\'e-mail est obligatoire. Les transactions restent bloquées tant que le numéro n\'est pas confirmé.'}
                 </p>
               </div>
 
-              <Label className="text-sm text-muted-foreground mb-2 block">Code OTP WhatsApp</Label>
-              <Input
-                value={otpValue}
-                onChange={e => setOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
-                className="text-center text-2xl font-bold tracking-widest h-14 mb-4"
-                maxLength={6}
-                data-testid="otp-input"
-              />
-              <div className="flex gap-3 mb-3">
-                <Button variant="outline" className="flex-1" onClick={() => setOtpModal(false)} data-testid="otp-cancel-btn">Annuler</Button>
-                <Button className="flex-1 btn-primary-glow" onClick={handleVerifyOtp} disabled={loading} data-testid="otp-verify-btn">
-                  {loading ? 'Vérification...' : 'Vérifier'}
-                </Button>
-              </div>
-              <button 
-                type="button" 
-                className="w-full text-center text-xs text-primary hover:underline mb-3"
-                onClick={() => resendOtp('phone')}
-                disabled={loading}
-              >
-                Renvoyer le code OTP
-              </button>
-
-              {hasEmail && (
-                <div className="border-t border-border pt-4">
+              {otpStep === 'phone' ? (
+                <>
+                  <Label className="text-sm text-muted-foreground mb-2 block">Code OTP WhatsApp</Label>
+                  <Input
+                    value={otpValue}
+                    onChange={e => setOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="text-center text-2xl font-bold tracking-widest h-14 mb-4"
+                    maxLength={6}
+                    data-testid="otp-input"
+                  />
+                  <div className="flex gap-3 mb-3">
+                    {hasEmail && (
+                      <Button variant="outline" className="flex-1" onClick={skipPhoneStep} disabled={loading} data-testid="otp-skip-btn">Skip</Button>
+                    )}
+                    <Button className="flex-1 btn-primary-glow" onClick={handleVerifyOtp} disabled={loading} data-testid="otp-verify-btn">
+                      {loading ? 'Vérification...' : 'Confirmer'}
+                    </Button>
+                  </div>
+                  <button 
+                    type="button" 
+                    className="w-full text-center text-xs text-primary hover:underline mb-1"
+                    onClick={() => resendOtp('phone')}
+                    disabled={loading}
+                  >
+                    Renvoyer le code OTP
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-center text-xs text-muted-foreground hover:underline"
+                    onClick={() => setOtpModal(false)}
+                    data-testid="otp-cancel-btn"
+                  >
+                    Annuler
+                  </button>
+                </>
+              ) : (
+                <>
                   <Label className="text-sm text-muted-foreground mb-2 block">Code reçu par e-mail</Label>
                   <Input
                     value={emailOtpValue}
                     onChange={e => setEmailOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="000000"
-                    className="text-center text-2xl font-bold tracking-widest h-14 mb-3"
+                    className="text-center text-2xl font-bold tracking-widest h-14 mb-4"
                     maxLength={6}
                     data-testid="email-otp-input"
                   />
-                  <Button className="w-full btn-primary-glow mb-3" onClick={handleVerifyEmailOtp} disabled={loading} data-testid="email-otp-verify-btn">
-                    Confirmer l'e-mail
-                  </Button>
+                  <div className="flex gap-3 mb-3">
+                    {phoneConfirmed && (
+                      <Button variant="outline" className="flex-1" onClick={skipEmailStep} disabled={loading} data-testid="email-skip-btn">Skip</Button>
+                    )}
+                    <Button className="flex-1 btn-primary-glow" onClick={handleVerifyEmailOtp} disabled={loading} data-testid="email-otp-verify-btn">
+                      {loading ? 'Vérification...' : 'Confirmer'}
+                    </Button>
+                  </div>
                   <button
                     type="button"
                     className="w-full text-center text-xs text-primary hover:underline"
@@ -425,7 +471,7 @@ export default function AuthPage() {
                   >
                     Renvoyer le code par e-mail
                   </button>
-                </div>
+                </>
               )}
             </div>
           </div>

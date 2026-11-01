@@ -145,9 +145,9 @@ async def issue_registration_otps(user: dict, channels=("phone", "email")) -> di
     expires = expiry_iso(minutes)
     updates = {}
     if "phone" in channels and user.get("phone"):
-        updates.update({"otp": gen_otp(), "otp_expires_at": expires})
+        updates.update({"otp": gen_otp(), "otp_expires_at": expires, "otp_target": user["phone"]})
     if "email" in channels and user.get("email") and user.get("email_verified") is not True:
-        updates.update({"email_otp": gen_otp(), "email_otp_expires_at": expires})
+        updates.update({"email_otp": gen_otp(), "email_otp_expires_at": expires, "email_otp_target": user["email"]})
     if not updates:
         return {"minutes": minutes}
     await db.users.update_one({"id": user["id"]}, {"$set": updates})
@@ -1286,8 +1286,8 @@ async def register(req: RegisterReq):
         "is_active": True, "is_verified": False, "kyc_status": "pending",
         "email_verified": False, "phone_verified": False,
         "account_number": gen_account(), "referral_code": gen_ref(req.name),
-        "referred_by": referrer_id, "otp": otp, "otp_expires_at": expiry_iso(reg_minutes),
-        "email_otp": None, "email_otp_expires_at": None, "profile_image": None,
+        "referred_by": referrer_id, "otp": otp, "otp_expires_at": expiry_iso(reg_minutes), "otp_target": req.phone,
+        "email_otp": None, "email_otp_expires_at": None, "email_otp_target": None, "profile_image": None,
         "primary_card_id": linked_card["id"] if linked_card else None,
         "free_card_used": False,  # Track if free card has been used
         "max_wallets": 2,  # Maximum wallets allowed
@@ -1347,9 +1347,10 @@ async def register(req: RegisterReq):
 async def verify_otp(req: OTPReq):
     user = await db.users.find_one({"phone": req.phone})
     if not user: raise HTTPException(404, "Utilisateur non trouvé")
-    if not user.get("otp") or user.get("otp") != req.otp: raise HTTPException(400, "OTP incorrect")
+    if not user.get("otp") or user.get("otp") != req.otp or user.get("otp_target") not in (None, user.get("phone")):
+        raise HTTPException(400, "OTP incorrect")
     if is_expired(user.get("otp_expires_at")): raise HTTPException(400, "OTP expiré. Demandez un nouveau code.")
-    await db.users.update_one({"phone": req.phone}, {"$set": {"is_verified": True, "phone_verified": True, "otp": None, "otp_expires_at": None}})
+    await db.users.update_one({"phone": req.phone}, {"$set": {"is_verified": True, "phone_verified": True, "otp": None, "otp_expires_at": None, "otp_target": None}})
     user.pop("_id", None); user.pop("password", None); user.pop("otp", None); user.pop("email_otp", None)
     user["is_verified"] = True; user["phone_verified"] = True
     return {"token": create_token(user["id"], user["role"]), "user": user, "message": "Numéro confirmé"}
@@ -1359,11 +1360,12 @@ async def verify_otp(req: OTPReq):
 async def verify_email_otp(req: OTPReq):
     """Confirm the e-mail address with the code sent at registration (identified by phone)."""
     user = await db.users.find_one({"phone": req.phone})
-    if not user or not user.get("email_otp") or user.get("email_otp") != req.otp:
+    if (not user or not user.get("email_otp") or user.get("email_otp") != req.otp
+            or user.get("email_otp_target") not in (None, user.get("email")) or not user.get("email")):
         raise HTTPException(400, "Code e-mail incorrect")
     if is_expired(user.get("email_otp_expires_at")):
         raise HTTPException(400, "Code expiré. Demandez un nouveau code.")
-    await db.users.update_one({"id": user["id"]}, {"$set": {"is_verified": True, "email_verified": True, "email_otp": None, "email_otp_expires_at": None}})
+    await db.users.update_one({"id": user["id"]}, {"$set": {"is_verified": True, "email_verified": True, "email_otp": None, "email_otp_expires_at": None, "email_otp_target": None}})
     for k in ("_id", "password", "otp", "email_otp"):
         user.pop(k, None)
     user["is_verified"] = True; user["email_verified"] = True
@@ -1397,11 +1399,11 @@ async def request_phone_confirmation(u=Depends(get_current_user)):
 @api_router.post("/auth/phone/confirm")
 async def confirm_phone(otp: str = Body(..., embed=True), u=Depends(get_current_user)):
     full = await db.users.find_one({"id": u["id"]})
-    if not full.get("otp") or full.get("otp") != otp:
+    if not full.get("otp") or full.get("otp") != otp or full.get("otp_target") not in (None, full.get("phone")):
         raise HTTPException(400, "OTP incorrect")
     if is_expired(full.get("otp_expires_at")):
         raise HTTPException(400, "OTP expiré. Demandez un nouveau code.")
-    await db.users.update_one({"id": u["id"]}, {"$set": {"phone_verified": True, "otp": None, "otp_expires_at": None}})
+    await db.users.update_one({"id": u["id"]}, {"$set": {"phone_verified": True, "otp": None, "otp_expires_at": None, "otp_target": None}})
     return {"message": "Numéro confirmé. Les transactions sont débloquées."}
 
 
