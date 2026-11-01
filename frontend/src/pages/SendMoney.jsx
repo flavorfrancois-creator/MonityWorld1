@@ -551,7 +551,8 @@ export default function SendMoney() {
           API.get('/currencies'),
           API.get('/wallet/balance')
         ]);
-        setCurrencies(currRes.data.currencies || []);
+        const list = Array.isArray(currRes.data) ? currRes.data : (currRes.data.currencies || []);
+        setCurrencies(list.filter(c => c.is_active !== false));
         setWallets(walRes.data.wallets || []);
       } catch (e) { toast.error('Erreur de chargement'); }
       finally { setLoading(false); }
