@@ -2819,6 +2819,8 @@ async def transfer_preview(req: TransferReq, u=Depends(get_current_user)):
     
     # Determine target currency
     target_currency = req.target_currency or req.currency
+    if target_currency != req.currency and target_currency not in await get_eligible_currency_codes(sender_country):
+        raise HTTPException(400, f"La devise {target_currency} n'est pas admissible pour votre pays")
     
     # Get receiver's wallets
     receiver_wallets = await db.wallets.find({"user_id": receiver["id"]}).to_list(10)
@@ -2936,6 +2938,8 @@ async def transfer(req: TransferReq, u=Depends(get_tx_user)):
     # Determine target currency
     target_currency = req.target_currency or req.currency
     is_conversion = req.currency != target_currency
+    if is_conversion and target_currency not in await get_eligible_currency_codes(sender_country):
+        raise HTTPException(400, f"La devise {target_currency} n'est pas admissible pour votre pays")
     
     # Get appropriate rule
     if is_international:
@@ -3760,6 +3764,38 @@ async def referral_stats(u=Depends(get_current_user)):
 @api_router.get("/currencies")
 async def get_currencies():
     return await db.currencies.find({"is_active": True}, {"_id": 0}).to_list(100)
+
+async def get_eligible_currency_codes(country_code: str):
+    """Currencies a client of `country_code` may use: those of its own active
+    country, plus those of other active countries when the client's country
+    can send internationally and the other country can receive."""
+    def cur_of(c):
+        return c.get("accepted_currencies") or [c.get("currency_code") or "USD"]
+
+    def svc(c, key):
+        return (c.get("services") or {}).get(key, True)
+
+    countries = await db.countries.find({"is_active": True}, {"_id": 0}).to_list(500)
+    own = next((c for c in countries if c.get("code") == country_code), None)
+    if not own:
+        return []
+    codes = list(cur_of(own))
+    if svc(own, "send_international"):
+        for c in countries:
+            if c.get("code") != country_code and svc(c, "receive_international"):
+                codes.extend(cur_of(c))
+    active = {c["code"] async for c in db.currencies.find({"is_active": True}, {"code": 1})}
+    return [code for code in dict.fromkeys(codes) if code in active]
+
+
+@api_router.get("/currencies/eligible")
+async def get_eligible_currencies(u=Depends(get_current_user)):
+    codes = await get_eligible_currency_codes(u.get("country", "CD"))
+    details = await db.currencies.find({"code": {"$in": codes}, "is_active": True}, {"_id": 0}).to_list(200)
+    order = {code: i for i, code in enumerate(codes)}
+    details.sort(key=lambda c: order.get(c["code"], 999))
+    return details
+
 
 @api_router.get("/currencies/convert")
 async def convert(from_cur: str, to_cur: str, amount: float):

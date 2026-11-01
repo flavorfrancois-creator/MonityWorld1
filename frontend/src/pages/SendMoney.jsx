@@ -399,7 +399,12 @@ function SendMoneyFlow({ currencies, wallets, user }) {
 function RechargeFlow({ currencies, user }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
-  const [form, setForm] = useState({ amount: '', currency: 'USD', method: 'mobile_money' });
+  const [form, setForm] = useState({ amount: '', currency: '', method: 'mobile_money' });
+  useEffect(() => {
+    if (currencies.length && !currencies.some(c => c.code === form.currency)) {
+      setForm(f => ({ ...f, currency: currencies[0].code }));
+    }
+  }, [currencies, form.currency]);
 
   const handleRecharge = async () => {
     if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Montant invalide'); return; }
@@ -548,7 +553,7 @@ export default function SendMoney() {
     const load = async () => {
       try {
         const [currRes, walRes] = await Promise.all([
-          API.get('/currencies'),
+          API.get('/currencies/eligible'),
           API.get('/wallet/balance')
         ]);
         const list = Array.isArray(currRes.data) ? currRes.data : (currRes.data.currencies || []);
