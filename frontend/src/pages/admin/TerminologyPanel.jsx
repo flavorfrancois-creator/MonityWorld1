@@ -18,15 +18,16 @@ export default function TerminologyPanel() {
     setSaving(true);
     try {
       await API.put('/admin/settings/terminology', { mode });
-      refresh();
       toast.success('Terminologie enregistrée');
+      if (mode !== current) setTimeout(() => window.location.reload(), 700);
+      else refresh();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur');
     } finally { setSaving(false); }
   };
 
   return (
-    <div className="bg-card border border-border rounded-xl p-5 animate-fade-in-up">
+    <div data-no-term className="bg-card border border-border rounded-xl p-5 animate-fade-in-up">
       <div className="flex items-center gap-3 mb-4">
         <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
           <Tag size={18} className="text-primary" />
@@ -38,7 +39,7 @@ export default function TerminologyPanel() {
         <Select value={mode} onValueChange={setMode}>
           <SelectTrigger className="h-10" data-testid="terminology-select"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="standard">N° de compte</SelectItem>
+            <SelectItem value="standard">N°{'\u200B'} de compte</SelectItem>
             <SelectItem value="partner">N° partenaire</SelectItem>
           </SelectContent>
         </Select>
