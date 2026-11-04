@@ -2423,6 +2423,36 @@ async def update_otp_settings_route(req: OtpSettingsReq, adm=Depends(get_admin_w
     return {"message": "Durées OTP mises à jour"}
 
 
+TERMINOLOGY_KEY = "terminology"
+TERMINOLOGY_MODES = ("standard", "partner")
+
+
+class TerminologyReq(BaseModel):
+    mode: str
+
+
+@api_router.get("/settings/terminology")
+async def get_terminology():
+    doc = await db.admin_settings.find_one({"key": TERMINOLOGY_KEY}, {"_id": 0})
+    mode = (doc or {}).get("mode", "standard")
+    return {"mode": mode if mode in TERMINOLOGY_MODES else "standard"}
+
+
+@api_router.put("/admin/settings/terminology")
+async def update_terminology(req: TerminologyReq, adm=Depends(get_admin_with_kyc)):
+    if not is_original_primary_admin(adm):
+        raise HTTPException(403, "Seul l'administrateur principal peut modifier ces paramètres")
+    if req.mode not in TERMINOLOGY_MODES:
+        raise HTTPException(400, "Mode invalide")
+    await db.admin_settings.update_one(
+        {"key": TERMINOLOGY_KEY},
+        {"$set": {"mode": req.mode, "updated_at": now_iso(), "updated_by": adm["id"]}},
+        upsert=True
+    )
+    await log_admin_activity(adm, "update", "settings", details={"setting": "terminology", "mode": req.mode})
+    return {"mode": req.mode}
+
+
 # === WALLET ===
 # Mobile app compatible endpoints (alias)
 @api_router.get("/wallets")

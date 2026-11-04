@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
+import { TerminologyProvider } from './context/TerminologyContext';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import PartnerLayout from './components/PartnerLayout';
@@ -150,9 +151,11 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <LanguageProvider>
-            <AppRoutes />
-            <HelpButton />
-            <Toaster richColors position="top-right" theme="dark" />
+            <TerminologyProvider>
+              <AppRoutes />
+              <HelpButton />
+              <Toaster richColors position="top-right" theme="dark" />
+            </TerminologyProvider>
           </LanguageProvider>
         </AuthProvider>
       </BrowserRouter>

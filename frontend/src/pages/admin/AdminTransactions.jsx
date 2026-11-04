@@ -8,11 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../componen
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CheckCircle2, XCircle, Eye, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { useTerminology } from '../../context/TerminologyContext';
 
-const TYPE_LABELS = { transfer: 'Transfert', recharge: 'Rechargement', withdrawal: 'Retrait', payment: 'Paiement' };
 const STATUS_COLORS = { completed: 'badge-completed', pending: 'badge-pending', rejected: 'badge-rejected' };
 
 export default function AdminTransactions() {
+  const { mode, label: tl } = useTerminology();
+  const TYPE_LABELS = { transfer: tl('transfer'), recharge: mode === 'partner' ? tl('deposit') : 'Rechargement', withdrawal: tl('withdrawal'), payment: 'Paiement' };
   const [searchParams] = useSearchParams();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +75,9 @@ export default function AdminTransactions() {
           <SelectTrigger className="w-40 h-9 text-sm" data-testid="tx-type-filter"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous types</SelectItem>
-            <SelectItem value="transfer">Transfert</SelectItem>
-            <SelectItem value="recharge">Rechargement</SelectItem>
-            <SelectItem value="withdrawal">Retrait</SelectItem>
+            <SelectItem value="transfer">{tl('transfer')}</SelectItem>
+            <SelectItem value="recharge">{mode === 'partner' ? tl('deposit') : 'Rechargement'}</SelectItem>
+            <SelectItem value="withdrawal">{tl('withdrawal')}</SelectItem>
           </SelectContent>
         </Select>
       </div>

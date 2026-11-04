@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTerminology } from '../context/TerminologyContext';
 import API from '../utils/api';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -28,6 +29,7 @@ function StepIndicator({ step, total }) {
 }
 
 function SendMoneyFlow({ currencies, wallets, user }) {
+  const { label } = useTerminology();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -135,7 +137,7 @@ function SendMoneyFlow({ currencies, wallets, user }) {
       <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
         <CheckCircle2 size={32} className="text-primary" />
       </div>
-      <h3 className="text-xl font-bold text-foreground" style={{fontFamily:'Manrope'}}>{result?.status === 'completed' ? 'Transfert réussi !' : 'Transfert soumis !'}</h3>
+      <h3 className="text-xl font-bold text-foreground" style={{fontFamily:'Manrope'}}>{result?.status === 'completed' ? `${label('transfer')} réussi !` : `${label('transfer')} soumis !`}</h3>
       <p className="text-muted-foreground text-sm">{result?.message}</p>
       <div className="bg-secondary/50 rounded-xl p-4 text-left space-y-2">
         <div className="flex justify-between"><span className="text-muted-foreground text-sm">Destinataire</span><span className="text-sm font-medium text-foreground">{result?.receiver}</span></div>
@@ -169,7 +171,7 @@ function SendMoneyFlow({ currencies, wallets, user }) {
           <Tabs value={form.method} onValueChange={v => setForm({...form, method: v})}>
             <TabsList className="w-full bg-secondary/50">
               <TabsTrigger value="phone" className="flex-1 text-xs">Par téléphone</TabsTrigger>
-              <TabsTrigger value="account" className="flex-1 text-xs">Par N° compte</TabsTrigger>
+              <TabsTrigger value="account" className="flex-1 text-xs">Par {label('account_number_short')}</TabsTrigger>
             </TabsList>
             <TabsContent value="phone" className="mt-4">
               <div className="relative">
@@ -180,7 +182,7 @@ function SendMoneyFlow({ currencies, wallets, user }) {
             <TabsContent value="account" className="mt-4">
               <div className="relative">
                 <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input value={form.receiver_account} onChange={e => setForm({...form, receiver_account: e.target.value})} placeholder="N° de compte" className="pl-10 h-11" data-testid="send-account-input" />
+                <Input value={form.receiver_account} onChange={e => setForm({...form, receiver_account: e.target.value})} placeholder={label('account_number')} className="pl-10 h-11" data-testid="send-account-input" />
               </div>
             </TabsContent>
           </Tabs>
@@ -465,6 +467,7 @@ function RechargeFlow({ currencies, user }) {
 }
 
 function WithdrawFlow({ currencies, wallets }) {
+  const { label } = useTerminology();
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [form, setForm] = useState({ amount: '', currency: 'USD', method: 'mobile_money', destination: '' });
@@ -478,7 +481,7 @@ function WithdrawFlow({ currencies, wallets }) {
     try {
       await API.post('/wallet/withdraw', { amount: parseFloat(form.amount), currency: form.currency, method: form.method, destination: form.destination });
       setDone(true);
-      toast.success('Retrait soumis. En attente de validation admin.');
+      toast.success(`${label('withdrawal')} soumis. En attente de validation admin.`);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Erreur');
     } finally { setLoading(false); }
@@ -489,7 +492,7 @@ function WithdrawFlow({ currencies, wallets }) {
       <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto">
         <CheckCircle2 size={32} className="text-yellow-400" />
       </div>
-      <h3 className="text-xl font-bold text-foreground">Retrait soumis</h3>
+      <h3 className="text-xl font-bold text-foreground">{label('withdrawal')} soumis</h3>
       <p className="text-sm text-muted-foreground">Votre retrait de {form.amount} {form.currency} est en attente de validation.</p>
       <Button className="btn-primary-glow" onClick={() => setDone(false)}>Nouveau retrait</Button>
     </div>
@@ -538,6 +541,7 @@ function WithdrawFlow({ currencies, wallets }) {
 
 export default function SendMoney() {
   const { user } = useAuth();
+  const { label } = useTerminology();
   const [searchParams] = useSearchParams();
   const [currencies, setCurrencies] = useState([]);
   const [wallets, setWallets] = useState([]);
@@ -576,9 +580,9 @@ export default function SendMoney() {
       <div className="bg-card border border-border rounded-2xl p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full bg-secondary/50 mb-6">
-            <TabsTrigger value="send" className="flex-1 text-xs gap-1" data-testid="tab-send"><Send size={14} />Envoyer</TabsTrigger>
+            <TabsTrigger value="send" className="flex-1 text-xs gap-1" data-testid="tab-send"><Send size={14} />{label('transfer') === 'Transfert' ? 'Envoyer' : label('transfer')}</TabsTrigger>
             <TabsTrigger value="recharge" className="flex-1 text-xs gap-1" data-testid="tab-recharge"><Plus size={14} />Recharger</TabsTrigger>
-            <TabsTrigger value="withdraw" className="flex-1 text-xs gap-1" data-testid="tab-withdraw"><Download size={14} />Retirer</TabsTrigger>
+            <TabsTrigger value="withdraw" className="flex-1 text-xs gap-1" data-testid="tab-withdraw"><Download size={14} />{label('withdrawal') === 'Retrait' ? 'Retirer' : label('withdrawal')}</TabsTrigger>
           </TabsList>
           <TabsContent value="send"><SendMoneyFlow currencies={currencies} wallets={wallets} user={user} /></TabsContent>
           <TabsContent value="recharge"><RechargeFlow currencies={currencies} user={user} /></TabsContent>

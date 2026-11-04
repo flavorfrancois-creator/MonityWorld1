@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTerminology } from '../context/TerminologyContext';
 import API from '../utils/api';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -17,10 +18,11 @@ function TxBadge({ status }) {
 }
 
 function TypeBadge({ type }) {
+  const { mode, label: tl } = useTerminology();
   const map = {
-    transfer: { label: 'Transfert', cls: 'bg-blue-500/10 text-blue-400' },
-    recharge: { label: 'Rechargement', cls: 'bg-green-500/10 text-green-400' },
-    withdrawal: { label: 'Retrait', cls: 'bg-orange-500/10 text-orange-400' },
+    transfer: { label: tl('transfer'), cls: 'bg-blue-500/10 text-blue-400' },
+    recharge: { label: mode === 'partner' ? tl('deposit') : 'Rechargement', cls: 'bg-green-500/10 text-green-400' },
+    withdrawal: { label: tl('withdrawal'), cls: 'bg-orange-500/10 text-orange-400' },
     payment: { label: 'Paiement', cls: 'bg-purple-500/10 text-purple-400' },
   };
   const { label, cls } = map[type] || { label: type, cls: 'bg-secondary text-muted-foreground' };
@@ -29,6 +31,7 @@ function TypeBadge({ type }) {
 
 export default function TransactionHistory() {
   const { user } = useAuth();
+  const { mode, label: tl } = useTerminology();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -89,9 +92,9 @@ export default function TransactionHistory() {
           <SelectTrigger className="w-36 h-9 text-sm" data-testid="history-type-filter"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous types</SelectItem>
-            <SelectItem value="transfer">Transfert</SelectItem>
-            <SelectItem value="recharge">Rechargement</SelectItem>
-            <SelectItem value="withdrawal">Retrait</SelectItem>
+            <SelectItem value="transfer">{tl('transfer')}</SelectItem>
+            <SelectItem value="recharge">{mode === 'partner' ? tl('deposit') : 'Rechargement'}</SelectItem>
+            <SelectItem value="withdrawal">{tl('withdrawal')}</SelectItem>
           </SelectContent>
         </Select>
         {hasFilters && (

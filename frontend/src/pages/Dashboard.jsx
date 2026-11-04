@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTerminology } from '../context/TerminologyContext';
 import { useLanguage } from '../context/LanguageContext';
 import API from '../utils/api';
 import { toast } from 'sonner';
@@ -29,6 +30,7 @@ function TxIcon({ type, isSender }) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { label } = useTerminology();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [balance, setBalance] = useState(null);
@@ -129,7 +131,7 @@ export default function Dashboard() {
 
         {/* Account number */}
         <div className="mt-4 flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">N° Compte:</span>
+          <span className="text-xs text-muted-foreground">{label('account_number_short')}:</span>
           <span className="text-xs font-mono text-foreground">{user?.account_number}</span>
           <button onClick={() => { navigator.clipboard.writeText(user?.account_number); toast.success('Copié !'); }}
             className="text-muted-foreground hover:text-primary transition-colors" data-testid="copy-account-btn">
