@@ -37,6 +37,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [countries, setCountries] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState('ALL');
+  const [selectedYear, setSelectedYear] = useState(new Date().getUTCFullYear());
+  const [profitData, setProfitData] = useState(null);
   const [txCategories, setTxCategories] = useState(null);
   const [myPermissions, setMyPermissions] = useState(null);
   const navigate = useNavigate();
@@ -75,16 +77,20 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const countryParam = selectedCountry !== 'ALL' ? `?country=${selectedCountry}` : '';
+      const profitParams = new URLSearchParams({ year: String(selectedYear) });
+      if (selectedCountry !== 'ALL') profitParams.set('country', selectedCountry);
       
       // Fetch all data in parallel with error handling
-      const [sRes, tRes, cRes] = await Promise.all([
+      const [sRes, tRes, cRes, profitRes] = await Promise.all([
         API.get(`/admin/stats${countryParam}`),
         API.get(`/admin/transactions?status=pending&limit=5${selectedCountry !== 'ALL' ? `&country=${selectedCountry}` : ''}`),
-        API.get('/admin/countries')
+        API.get('/admin/countries'),
+        API.get(`/admin/dashboard/net-profit?${profitParams.toString()}`)
       ]);
       
       setStats(sRes.data);
       setRecentTxs(tRes.data.transactions || []);
+      setProfitData(profitRes.data);
       
       // Filter countries based on user access
       let availableCountries = cRes.data.countries?.filter(c => c.is_active) || [];
@@ -107,7 +113,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [selectedCountry, accessibleCountries]);
+  }, [selectedCountry, selectedYear, accessibleCountries]);
 
   useEffect(() => { 
     if (myPermissions !== null) {
@@ -141,6 +147,41 @@ export default function AdminDashboard() {
     { label: 'En attente', value: stats?.pending_transactions || 0, icon: Clock, color: 'text-yellow-400', bg: 'bg-yellow-500/10', urgent: (stats?.pending_transactions || 0) > 0 },
     { label: 'Volume 30j', value: `$${(stats?.volume_30d || 0).toLocaleString()}`, icon: TrendingUp, color: 'text-purple-400', bg: 'bg-purple-500/10' },
   ];
+
+  const profitPeriods = [
+    ['daily', 'Aujourd’hui'],
+    ['monthly', 'Ce mois'],
+    ['quarterly', 'Ce trimestre'],
+    ['semiannual', 'Ce semestre'],
+    ['trailing_year', '12 mois jusqu’à aujourd’hui'],
+    ['year_to_date', 'Du 1er janvier à aujourd’hui'],
+    ['selected_year', `Année complète ${selectedYear}`],
+  ];
+  const serviceLabels = {
+    transfer: 'Transferts', qr_transfer: 'Paiements QR', send_international: 'Envois internationaux',
+    receive_international: 'Réceptions internationales', recharge: 'Rechargements', withdrawal: 'Retraits',
+    deposit: 'Dépôts', payment_link: 'Liens de paiement', ecommerce_send: 'Paiements e-commerce envoyés',
+    ecommerce_receive: 'Paiements e-commerce reçus', ecommerce_payment_sent: 'Paiements e-commerce envoyés',
+    ecommerce_payment_received: 'Paiements e-commerce reçus', ecommerce_send_completed: 'Paiements e-commerce envoyés',
+    ecommerce_received: 'Paiements e-commerce reçus', mobile_deposit: 'Dépôts Mobile Money',
+    mobile_withdraw: 'Retraits Mobile Money', client_recharge: 'Rechargements client via partenaire',
+    client_withdraw: 'Retraits client via partenaire', nfc_recharge: 'Rechargements NFC',
+    nfc_withdraw: 'Retraits NFC', conversion: 'Conversions', monity_payment: 'Paiements Monity',
+    card_recharge: 'Rechargements de carte', payment: 'Paiements',
+  };
+  const formatNetCurrencies = (values) => values?.length
+    ? values.map(({ currency, net }) => `${net < 0 ? '−' : ''}${Math.abs(net).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`).join(' · ')
+    : '0,00 USD';
+  const formatPeriodRange = (period) => {
+    if (!period) return '';
+    const from = new Date(period.from);
+    const to = new Date(period.to);
+    if (to.getUTCHours() === 0 && to.getUTCMinutes() === 0 && to.getUTCSeconds() === 0 && to.getUTCMilliseconds() === 0) {
+      to.setUTCDate(to.getUTCDate() - 1);
+    }
+    const formatDate = date => date.toLocaleDateString('fr-FR', { timeZone: 'UTC' });
+    return `Du ${formatDate(from)} au ${formatDate(to)}`;
+  };
 
   // Transaction categories with icons
   const transferCategories = [
@@ -204,6 +245,16 @@ export default function AdminDashboard() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={String(selectedYear)} onValueChange={value => setSelectedYear(Number(value))}>
+            <SelectTrigger className="w-32" data-testid="profit-year-filter">
+              <SelectValue placeholder="Année" />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: Math.max(1, new Date().getUTCFullYear() - 2019) }, (_, i) => new Date().getUTCFullYear() - i).map(year => (
+                <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button size="sm" variant="outline" onClick={fetchData}>
             <RefreshCw size={14} />
           </Button>
@@ -225,6 +276,53 @@ export default function AdminDashboard() {
           </div>
         ))}
       </div>
+
+      {/* Recorded net profit */}
+      <section className="space-y-4" data-testid="net-profit-section">
+        <div>
+          <h2 className="text-lg font-bold text-foreground" style={{ fontFamily: 'Manrope' }}>Bénéfice net opérationnel</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Frais et frais de conversion encaissés, plus frais clients partenaires, moins commissions partenaires. Montants affichés dans leur devise d’origine; dépenses opérationnelles non incluses.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {profitPeriods.map(([key, title]) => (
+            <div key={key} className="bg-card border border-border rounded-xl p-4" data-testid={`net-profit-${key}`}>
+              <p className="text-xs text-muted-foreground mb-2">{title}</p>
+              <p className="text-[11px] text-muted-foreground mb-2">{formatPeriodRange(profitData?.periods?.[key])}</p>
+              <div className="space-y-1">
+                {(profitData?.periods?.[key]?.by_currency?.length
+                  ? profitData.periods[key].by_currency
+                  : [{ currency: 'USD', net: 0 }]
+                ).map(({ currency, net }) => (
+                  <p key={currency} className={`text-lg font-bold ${net < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {net < 0 ? '−' : ''}{Math.abs(net).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs">{currency}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5">
+          <h3 className="font-semibold text-foreground mb-3" style={{ fontFamily: 'Manrope' }}>
+            Bénéfice net par type de service — année {selectedYear}
+          </h3>
+          {profitData?.selected_year_by_service?.length ? (
+            <div className="divide-y divide-border">
+              {profitData.selected_year_by_service.map(({ type, by_currency }) => (
+                <div key={type} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-3">
+                  <span className="text-sm text-foreground">{serviceLabels[type] || type.replaceAll('_', ' ')}</span>
+                  <span className={`text-sm font-semibold ${by_currency.some(value => value.net < 0) ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {formatNetCurrencies(by_currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Aucun bénéfice enregistré pour cette année et ce filtre pays.</p>
+          )}
+        </div>
+      </section>
 
       {/* Transaction Categories */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

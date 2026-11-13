@@ -302,6 +302,163 @@ async def get_analytics_overview(adm=Depends(get_admin)):
     }
 
 
+@router.get("/dashboard/net-profit")
+async def get_dashboard_net_profit(
+    year: Optional[int] = Query(default=None, ge=2000, le=2100),
+    country: str = "",
+    adm=Depends(get_admin)
+):
+    """Return recorded net fee income by reporting period and transaction service."""
+    now = datetime.now(timezone.utc)
+    selected_year = year or now.year
+    today = now.date()
+    today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+    tomorrow_start = today_start + timedelta(days=1)
+    month_start = today_start.replace(day=1)
+    quarter_start = today_start.replace(month=((today.month - 1) // 3) * 3 + 1, day=1)
+    semester_start = today_start.replace(month=1 if today.month <= 6 else 7, day=1)
+    year_start = datetime(today.year, 1, 1, tzinfo=timezone.utc)
+    selected_year_start = datetime(selected_year, 1, 1, tzinfo=timezone.utc)
+    selected_year_end = datetime(selected_year + 1, 1, 1, tzinfo=timezone.utc)
+    try:
+        trailing_start_date = today.replace(year=today.year - 1)
+    except ValueError:
+        trailing_start_date = today.replace(year=today.year - 1, day=28)
+    trailing_year_start = datetime(
+        trailing_start_date.year, trailing_start_date.month, trailing_start_date.day,
+        tzinfo=timezone.utc
+    )
+
+    periods = {
+        "daily": (today_start, tomorrow_start),
+        "monthly": (month_start, tomorrow_start),
+        "quarterly": (quarter_start, tomorrow_start),
+        "semiannual": (semester_start, tomorrow_start),
+        "trailing_year": (trailing_year_start, now + timedelta(microseconds=1)),
+        "year_to_date": (year_start, now + timedelta(microseconds=1)),
+        "selected_year": (selected_year_start, selected_year_end),
+    }
+    query_start = min(bounds[0] for bounds in periods.values())
+    query_end = max(bounds[1] for bounds in periods.values())
+
+    requested_country = country.upper().strip()
+    allowed_countries = [c.upper() for c in get_accessible_countries(adm)]
+    if requested_country and allowed_countries and requested_country not in allowed_countries:
+        raise HTTPException(403, "Accès interdit à ce pays")
+    countries = [requested_country] if requested_country else allowed_countries
+
+    transaction_match = {
+        "status": "completed",
+        "recognized_at": {"$gte": query_start, "$lt": query_end},
+    }
+    if countries:
+        transaction_match["$or"] = [
+            {"sender_country": {"$in": countries}},
+            {"receiver_country": {"$in": countries}},
+        ]
+    transaction_pipeline = [
+        {"$addFields": {
+            "recognized_at": {
+                "$dateFromString": {
+                    "dateString": {"$ifNull": ["$completed_at", "$created_at"]},
+                    "onError": None,
+                    "onNull": None,
+                }
+            }
+        }},
+        {"$match": transaction_match},
+        {"$group": {
+            "_id": {
+                "date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$recognized_at", "timezone": "UTC"}},
+                "type": {"$ifNull": ["$type", "other"]},
+                "currency": {"$toUpper": {"$ifNull": ["$currency", "USD"]}},
+            },
+            "net": {"$sum": {"$add": [
+                {"$convert": {"input": {"$ifNull": ["$fee", 0]}, "to": "double", "onError": 0, "onNull": 0}},
+                {"$convert": {"input": {"$ifNull": ["$conversion_fee", 0]}, "to": "double", "onError": 0, "onNull": 0}},
+            ]}},
+        }},
+    ]
+    transaction_rows = await db.transactions.aggregate(transaction_pipeline).to_list(100000)
+
+    partner_match = {
+        "status": "completed",
+        "recognized_at": {"$gte": query_start, "$lt": query_end},
+    }
+    if countries:
+        partners = await db.partners.find({"country": {"$in": countries}}, {"id": 1, "_id": 0}).to_list(100000)
+        partner_ids = [partner["id"] for partner in partners]
+        partner_match["partner_id"] = {"$in": partner_ids}
+    partner_pipeline = [
+        {"$addFields": {
+            "recognized_at": {
+                "$dateFromString": {
+                    "dateString": "$created_at",
+                    "onError": None,
+                    "onNull": None,
+                }
+            }
+        }},
+        {"$match": partner_match},
+        {"$group": {
+            "_id": {
+                "date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$recognized_at", "timezone": "UTC"}},
+                "type": {"$ifNull": ["$type", "other"]},
+                "currency": {"$toUpper": {"$ifNull": ["$currency", "USD"]}},
+            },
+            "net": {"$sum": {"$subtract": [
+                {"$convert": {"input": {"$ifNull": ["$client_fee", 0]}, "to": "double", "onError": 0, "onNull": 0}},
+                {"$convert": {"input": {"$ifNull": ["$commission", "$partner_commission"]}, "to": "double", "onError": 0, "onNull": 0}},
+            ]}},
+        }},
+    ]
+    partner_rows = await db.partner_transactions.aggregate(partner_pipeline).to_list(100000)
+
+    rows = transaction_rows + partner_rows
+
+    def totals_for(start: datetime, end: datetime):
+        currencies = {}
+        services = {}
+        for row in rows:
+            row_date = datetime.strptime(row["_id"]["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if not start <= row_date < end:
+                continue
+            currency = row["_id"]["currency"]
+            service = row["_id"]["type"]
+            amount = float(row.get("net", 0) or 0)
+            currencies[currency] = currencies.get(currency, 0.0) + amount
+            service_currencies = services.setdefault(service, {})
+            service_currencies[currency] = service_currencies.get(currency, 0.0) + amount
+        return {
+            "by_currency": [
+                {"currency": currency, "net": round(amount, 2)}
+                for currency, amount in sorted(currencies.items())
+            ],
+            "by_service": [
+                {
+                    "type": service,
+                    "by_currency": [
+                        {"currency": currency, "net": round(amount, 2)}
+                        for currency, amount in sorted(currency_totals.items())
+                    ],
+                }
+                for service, currency_totals in sorted(services.items())
+            ],
+        }
+
+    result = {
+        key: {"from": start.isoformat(), "to": end.isoformat(), **totals_for(start, end)}
+        for key, (start, end) in periods.items()
+    }
+    return {
+        "year": selected_year,
+        "as_of": now.isoformat(),
+        "basis": "Frais et frais de conversion des transactions achevées + frais clients partenaires - commissions partenaires. Dépenses opérationnelles non incluses.",
+        "periods": result,
+        "selected_year_by_service": result["selected_year"]["by_service"],
+    }
+
+
 # === ADMIN ACTIVITY LOGS ===
 @router.get("/activity-logs")
 async def get_admin_activity_logs(
@@ -572,7 +729,7 @@ async def export_accounting_data(req: AccountingExportReq, adm=Depends(get_admin
         tx_query["currency"] = req.currency.upper()
     
     # Apply country access restrictions
-    admin_countries = get_accessible_countries(adm)
+    admin_countries = [c.upper() for c in get_accessible_countries(adm)]
     if admin_countries:
         country_filter = {"$or": [
             {"sender_country": {"$in": admin_countries}},
@@ -663,10 +820,26 @@ async def export_accounting_data(req: AccountingExportReq, adm=Depends(get_admin
                 partner_tx_query["created_at"]["$lte"] = req.date_to
             else:
                 partner_tx_query["created_at"] = {"$lte": req.date_to}
+
+        partner_countries = admin_countries
+        if req.country:
+            requested_country = req.country.upper()
+            if admin_countries and requested_country not in admin_countries:
+                partner_tx_query["partner_id"] = {"$in": []}
+                partner_countries = None
+            else:
+                partner_countries = [requested_country]
+        if partner_countries:
+            country_partners = await db.partners.find(
+                {"country": {"$in": partner_countries}}, {"id": 1, "_id": 0}
+            ).to_list(100000)
+            partner_tx_query["partner_id"] = {"$in": [p["id"] for p in country_partners]}
         
         partner_transactions = await db.partner_transactions.find(partner_tx_query, {"_id": 0}).to_list(10000)
         
-        total_partner_commissions = sum(t.get("partner_commission", 0) for t in partner_transactions)
+        total_partner_commissions = sum(
+            t.get("commission", t.get("partner_commission", 0)) for t in partner_transactions
+        )
         total_client_fees = sum(t.get("client_fee", 0) for t in partner_transactions)
         
         result["commissions"] = {
@@ -719,7 +892,7 @@ async def get_accounting_summary(
     query = {"created_at": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}}
     
     # Apply country restrictions
-    admin_countries = get_accessible_countries(adm)
+    admin_countries = [c.upper() for c in get_accessible_countries(adm)]
     if admin_countries:
         query["$or"] = [
             {"sender_country": {"$in": admin_countries}},
@@ -785,5 +958,3 @@ async def get_accounting_summary(
         "daily": [{"date": d["_id"], "count": d["count"], "volume": round(d["volume"], 2), "fees": round(d["fees"], 2)} for d in daily_data],
         "by_type": [{"type": t["_id"], "count": t["count"], "volume": round(t["volume"], 2), "fees": round(t["fees"], 2)} for t in type_data]
     }
-
-
