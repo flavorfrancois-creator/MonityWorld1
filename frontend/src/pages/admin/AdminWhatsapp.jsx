@@ -311,27 +311,33 @@ export default function AdminWhatsapp() {
     setConnectLoading(false);
   };
 
-  // Manual confirm: user clicks "Numéro connecté" — checks page status on-demand
-  const handleManualConfirmConnected = async () => {
-    setConnectLoading(true);
-    try {
-      const res = await API.post(`/admin/whatsapp/configs/${selectedConfig.id}/check-connection`);
-      if (res.data.status === 'ready' && res.data.connected) {
-        if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
-        setConnectStep('success');
-        toast.success('WhatsApp connecté !');
-        fetchData();
-      } else if (res.data.status === 'waiting_scan') {
-        toast.info(res.data.message || 'QR code toujours visible. Scannez-le avec votre téléphone.');
-      } else {
-        toast.info(res.data.message || 'Connexion non encore détectée. Réessayez dans quelques secondes.');
+  // Auto-detect the scan: poll the page status while the QR code is displayed
+  const qrVisible = showConnectModal && connectStep === 'qr_code' && !!qrData?.qr;
+  const configIdForQR = selectedConfig?.id;
+  useEffect(() => {
+    if (!qrVisible || !configIdForQR) return undefined;
+    let cancelled = false;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy || cancelled) return;
+      busy = true;
+      try {
+        const res = await API.post(`/admin/whatsapp/configs/${configIdForQR}/check-connection`);
+        if (!cancelled && res.data?.status === 'ready' && res.data?.connected) {
+          cancelled = true;
+          clearInterval(timer);
+          setConnectStep('success');
+          toast.success('WhatsApp connecté !');
+          fetchData();
+        }
+      } catch (e) {
+        // transient error: keep polling
+      } finally {
+        busy = false;
       }
-    } catch (err) {
-      toast.error('Erreur lors de la vérification');
-    } finally {
-      setConnectLoading(false);
-    }
-  };
+    }, 3000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [qrVisible, configIdForQR]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start phone pairing
   const handleStartPhonePairing = () => {
@@ -1344,7 +1350,7 @@ export default function AdminWhatsapp() {
                     <div className="text-center">
                       <img src={qrData.qr} alt="QR Code WhatsApp" className="w-64 h-64 mx-auto" />
                       <p className="text-xs text-green-600 mt-2 flex items-center justify-center gap-1">
-                        Page WhatsApp Web autonome — scannez puis cliquez "Numéro connecté"
+                        Page WhatsApp Web autonome — la connexion sera détectée automatiquement
                       </p>
                     </div>
                   ) : qrData?.status === 'retry_needed' ? (
@@ -1373,7 +1379,7 @@ export default function AdminWhatsapp() {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     <CheckCircle size={10} className="inline mr-1 text-green-400" />
-                    Après le scan, cliquez "Numéro connecté" pour confirmer la liaison.
+                    Après le scan, la liaison est détectée automatiquement.
                   </p>
                 </div>
 
@@ -1381,10 +1387,6 @@ export default function AdminWhatsapp() {
                   <Button variant="outline" className="flex-1" onClick={() => setConnectStep('choose')}>Retour</Button>
                   <Button variant="outline" onClick={handleRefreshQR} disabled={connectLoading} data-testid="manual-refresh-btn">
                     <RefreshCw size={14} className="mr-1" />Rafraîchir
-                  </Button>
-                  <Button className="flex-1 btn-primary-glow" onClick={handleManualConfirmConnected} disabled={connectLoading} data-testid="confirm-connected-btn">
-                    {connectLoading ? <Loader2 size={14} className="mr-1 animate-spin" /> : <CheckCircle size={14} className="mr-1" />}
-                    Numéro connecté
                   </Button>
                 </div>
               </>
