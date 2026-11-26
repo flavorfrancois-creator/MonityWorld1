@@ -252,8 +252,7 @@ async function checkConnection(sessionId) {
                    !!document.querySelector('div[data-testid="conversation-panel-wrapper"]') ||
                    !!document.querySelector('header[data-testid="chatlist-header"]') ||
                    !!document.querySelector('[data-testid="menu-bar-search"]') ||
-                   // No canvas means QR is gone = likely connected
-                   (!document.querySelector('canvas') && !document.querySelector('[data-testid="qrcode"]'));
+                   !!document.querySelector('[data-testid="wa-web-main-screen"]');
         }).catch(() => false);
 
         if (isConnected) {
@@ -909,7 +908,9 @@ async function sendViaWhatsAppWeb(sessionId, phone, message) {
     if (!session) throw new Error('Session non initialisee');
 
     const { page } = session;
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    let cleanPhone = phone.replace(/[^0-9]/g, '');
+    // Drop the national trunk prefix typed after the country code (e.g. 243 065... -> 243 65...)
+    if (cleanPhone.startsWith('2430')) cleanPhone = '243' + cleanPhone.slice(4);
 
     console.log(`[${sessionId}] Sending message to ${cleanPhone.slice(0, 5)}*** via WhatsApp Web`);
 
@@ -920,30 +921,74 @@ async function sendViaWhatsAppWeb(sessionId, phone, message) {
             timeout: 30000
         });
 
-        // Wait for the chat to load and the message input to appear
-        await page.waitForTimeout(5000);
+        // Wait until WhatsApp Web finished loading ("Loading your chats") and either the chat
+        // composer, an invalid-number popup or the QR code (logged out) is displayed
+        const composeSelector = [
+            '[data-testid="conversation-compose-box-input"]',
+            'footer div[contenteditable="true"]',
+            'div[contenteditable="true"][data-tab]',
+            'div[contenteditable="true"][role="textbox"]'
+        ].join(', ');
+        const qrSelector = 'canvas[aria-label*="QR" i], [data-ref], [data-testid="qrcode"]';
+        const popupSelector = '[data-testid="confirm-popup"], div[role="dialog"]';
 
-        // Check if we got an "invalid phone" popup
-        const hasError = await page.evaluate(() => {
-            const body = document.body.innerText.toLowerCase();
-            return body.includes('numéro de téléphone') && body.includes('pas un numéro') ||
-                   body.includes('phone number shared via') && body.includes('invalid') ||
-                   body.includes('not on whatsapp');
-        }).catch(() => false);
+        const dismissPopups = async () => {
+            await page.evaluate(() => {
+                for (const p of document.querySelectorAll('[data-testid="confirm-popup"], div[role="dialog"]')) {
+                    const btn = [...p.querySelectorAll('button')].find(b => /continue|continuer|ok|fermer|close|got it/i.test((b.innerText || '') + (b.getAttribute('aria-label') || '')));
+                    if (btn) btn.click();
+                }
+            }).catch(() => {});
+        };
 
-        if (hasError) {
-            // Go back to main page
-            await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
-            return { success: false, error: 'Numero non inscrit sur WhatsApp' };
+        const deadline = Date.now() + 45000;
+        let state = 'loading';
+        while (Date.now() < deadline) {
+            if (await page.$(qrSelector)) { state = 'logged_out'; break; }
+            if (await page.$(composeSelector)) { state = 'ready'; break; }
+            const popupText = await page.evaluate((sel) => {
+                const p = document.querySelector(sel);
+                return p ? p.innerText.toLowerCase() : '';
+            }, popupSelector).catch(() => '');
+            if (/invalid|invalide|n'est pas|not on whatsapp|pas sur whatsapp|not a valid|inexistant/.test(popupText)) { state = 'invalid_number'; break; }
+            if (popupText) await dismissPopups();
+            await page.waitForTimeout(1000);
         }
 
-        // Try to find and click the send button
+        const backToMain = () => page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+
+        if (state === 'logged_out') {
+            await backToMain();
+            return { success: false, error: 'Session WhatsApp deconnectee. Reconnectez WhatsApp (scanner le QR code).' };
+        }
+        if (state === 'invalid_number') {
+            await backToMain();
+            return { success: false, error: 'Numero non inscrit sur WhatsApp ou invalide' };
+        }
+        if (state !== 'ready') {
+            await backToMain();
+            return { success: false, error: 'WhatsApp Web ne s\'est pas charge a temps (champ de saisie introuvable)' };
+        }
+
+        await dismissPopups();
+        await page.waitForTimeout(1000);
+
+        // The URL text is normally prefilled; type it ourselves if the composer is empty
+        const msgInput = await page.$(composeSelector);
+        const typed = await msgInput.evaluate(el => (el.innerText || '').trim().length).catch(() => 0);
+        if (!typed) {
+            await msgInput.click();
+            await page.keyboard.insertText(message);
+            await page.waitForTimeout(500);
+        }
+
+        // Click the send button (FR/EN labels), otherwise press Enter in the composer
         const sent = await page.evaluate(() => {
-            // The send button
             const sendBtn = document.querySelector('[data-testid="send"]') ||
                            document.querySelector('button[aria-label="Send"]') ||
                            document.querySelector('button[aria-label="Envoyer"]') ||
-                           document.querySelector('span[data-icon="send"]')?.closest('button');
+                           document.querySelector('[data-icon="send"]')?.closest('button, [role="button"]') ||
+                           document.querySelector('[data-icon="wds-ic-send-filled"]')?.closest('button, [role="button"]');
             if (sendBtn) {
                 sendBtn.click();
                 return true;
@@ -952,17 +997,9 @@ async function sendViaWhatsAppWeb(sessionId, phone, message) {
         }).catch(() => false);
 
         if (!sent) {
-            // Try pressing Enter in the message input as fallback
-            const msgInput = await page.$('[data-testid="conversation-compose-box-input"]') ||
-                            await page.$('div[contenteditable="true"][data-tab="10"]') ||
-                            await page.$('footer div[contenteditable="true"]');
-            if (msgInput) {
-                await msgInput.press('Enter');
-                console.log(`[${sessionId}] Sent via Enter key`);
-            } else {
-                await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
-                return { success: false, error: 'Impossible de trouver le champ de saisie' };
-            }
+            await msgInput.focus();
+            await page.keyboard.press('Enter');
+            console.log(`[${sessionId}] Sent via Enter key`);
         }
 
         await page.waitForTimeout(2000);
