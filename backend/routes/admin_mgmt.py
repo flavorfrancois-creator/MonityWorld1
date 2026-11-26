@@ -103,12 +103,14 @@ async def start_admin_registration(req: AdminRegistrationStartReq, adm=Depends(g
         "created_by": adm["id"],
     })
     try:
-        await send_whatsapp_otp(req.phone, phone_otp)
+        wa_result = await send_whatsapp_otp(req.phone, phone_otp, country_code=req.country.upper())
+        if not wa_result.get("success"):
+            raise RuntimeError(f"WhatsApp: {wa_result.get('error', 'envoi échoué')}")
         await _send_admin_email_otp(req.email.lower().strip(), email_otp, req.country)
     except Exception as exc:
         await db.admin_registration_verifications.delete_one({"id": verification_id})
         logger.error("Administrator OTP delivery failed: %s", exc)
-        raise HTTPException(503, "Impossible d'envoyer les codes OTP. Vérifiez la configuration WhatsApp et email.")
+        raise HTTPException(503, f"Impossible d'envoyer les codes OTP ({exc}). Vérifiez la configuration WhatsApp et email.")
     return {"verification_id": verification_id, "expires_in": 600}
 
 

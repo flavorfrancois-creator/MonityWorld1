@@ -68,7 +68,7 @@ async def _send_via_whatsapp(phone: str, message: str, country_code: str = None)
     if not config:
         return {"success": False, "error": "Aucune configuration WhatsApp disponible pour ce pays", "fallback": "sms"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=90.0) as client:
         try:
             resp = await client.post(
                 f"{WHATSAPP_SERVICE_URL}/send",
@@ -93,9 +93,9 @@ async def _send_via_whatsapp(phone: str, message: str, country_code: str = None)
             return {"success": False, "error": str(e), "fallback": "sms"}
 
 
-async def send_whatsapp_otp(phone: str, otp: str, is_2fa: bool = False) -> dict:
+async def send_whatsapp_otp(phone: str, otp: str, is_2fa: bool = False, country_code: str = None) -> dict:
     if is_2fa:
         message = f"Monity World - Double authentification\n\nVotre code de vérification: {otp}\n\nCe code expire dans 10 minutes.\n\nSi vous n'avez pas essayé de vous connecter, sécurisez immédiatement votre compte."
     else:
         message = f"Monity World - Vérification\n\nVotre code OTP: {otp}\n\nEntrez ce code pour vérifier votre compte.\n\nCe code expire dans 10 minutes."
-    return await send_whatsapp_message(phone, message)
+    return await send_whatsapp_message(phone, message, country_code)
