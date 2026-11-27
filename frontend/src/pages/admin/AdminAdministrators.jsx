@@ -82,6 +82,13 @@ export default function AdminManagement() {
     fetchAdmins();
   }, [fetchAdmins]);
 
+  const fetchRequests = useCallback(() => {
+    API.get('/admin/rbac/assignment-requests')
+      .then(r => setRequestedIds((r.data.received || []).filter(x => x.status === 'pending').map(x => x.requester_id)))
+      .catch(() => setRequestedIds([]));
+  }, []);
+  useEffect(() => { fetchRequests(); }, [fetchRequests, admins]);
+
   const hasPermission = (perm) => {
     return myPermissions?.permissions?.includes(perm) || myPermissions?.is_original_primary;
   };
@@ -214,6 +221,16 @@ export default function AdminManagement() {
                   {admin.permissions?.length || 0} permissions
                 </span>
                 <div className="flex items-center gap-1">
+                  {requestedIds.includes(admin.id) && admin.can_be_edited && (myPermissions?.is_primary_admin || myPermissions?.is_original_primary) && (
+                    <Button
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => { setSelectedAdmin(admin); setShowPermissionsDialog(true); }}
+                      title="Demande de modification des attributions en attente"
+                    >
+                      Modifier
+                    </Button>
+                  )}
                   {admin.can_be_edited && hasPermission('admins.edit') && (
                     <Button
                       variant="ghost"
@@ -602,6 +619,7 @@ function EditPermissionsDialog({ open, onClose, admin, permissionsData, myPermis
     can_suspend_roles: []
   });
   const [processing, setProcessing] = useState(false);
+  const [requestedIds, setRequestedIds] = useState([]);
 
   useEffect(() => {
     if (admin) {

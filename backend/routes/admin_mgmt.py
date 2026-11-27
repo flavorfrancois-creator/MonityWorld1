@@ -539,6 +539,10 @@ async def update_administrator_permissions(
         "created_at": now_iso()
     })
     
+    await db.assignment_requests.update_many(
+        {"requester_id": admin_id, "status": "pending"},
+        {"$set": {"status": "done", "resolved_at": now_iso(), "resolved_by": adm["id"]}}
+    )
     return {"message": "Permissions mises à jour avec succès"}
 
 
