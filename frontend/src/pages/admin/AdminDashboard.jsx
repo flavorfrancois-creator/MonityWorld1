@@ -211,7 +211,7 @@ export default function AdminDashboard() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <AssignmentRequestsInbox />
-      {!['primary_admin','secondary_primary_admin'].includes(user?.role) && <AssignmentRequestButton />}
+      {!user?.is_super_admin && !['primary_admin','secondary_primary_admin'].includes(user?.role) && <AssignmentRequestButton />}
       {/* Country Filter Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-card border border-border rounded-xl p-4">
         <div>

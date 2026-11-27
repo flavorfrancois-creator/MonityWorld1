@@ -231,8 +231,16 @@ class AssignmentChangeReq(BaseModel):
 @router.post("/rbac/assignment-requests")
 async def request_assignment_change(req: AssignmentChangeReq, adm=Depends(get_admin)):
     """Ask the admin who created this account to change the services assigned to it."""
-    targets = await db.users.find({"role": {"$in": ["primary_admin", "secondary_primary_admin"]}, "is_suspended": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(100)
-    country_admins = await db.users.find({"role": "admin", "assigned_countries": adm.get("country"), "is_suspended": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(100)
+    active = {"is_suspended": {"$ne": True}, "is_deleted": {"$ne": True}}
+    targets = await db.users.find({**active, "$or": [
+        {"role": {"$in": ["primary_admin", "secondary_primary_admin"]}},
+        {"is_super_admin": True},
+        {"id": adm.get("created_by_admin_id")},
+    ]}, {"_id": 0, "id": 1}).to_list(100)
+    country_admins = await db.users.find({**active, "role": "admin", "$or": [
+        {"assigned_countries": adm.get("country")},
+        {"assigned_countries": {"$size": 0}},
+    ]}, {"_id": 0, "id": 1}).to_list(100)
     target_ids = sorted({t["id"] for t in targets + country_admins} - {adm["id"]})
     if not target_ids:
         raise HTTPException(400, "Aucun administrateur à contacter")

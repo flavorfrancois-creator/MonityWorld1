@@ -291,7 +291,7 @@ async def get_analytics_overview(adm=Depends(get_admin)):
     })
     
     kyc_q = {"kyc_status": {"$in": ["pending", "incomplete", "submitted", "clarification_needed"]}}
-    if is_primary_admin(adm):
+    if is_primary_admin(adm) or is_original_primary_admin(adm):
         kyc_q["id"] = {"$ne": adm["id"]}
     else:
         kyc_q["role"] = {"$nin": list(NON_CLIENT_ROLES)}

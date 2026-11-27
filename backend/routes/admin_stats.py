@@ -387,7 +387,7 @@ async def admin_kyc(uid: str, action: str, note: str = "", adm=Depends(get_admin
         raise HTTPException(403, "Vous n'avez pas accès à cet utilisateur")
     
     target_role = (await db.users.find_one({"id": uid}, {"role": 1}) or {}).get("role")
-    if target_role in NON_CLIENT_ROLES and (not is_primary_admin(adm) or uid == adm["id"]):
+    if target_role in NON_CLIENT_ROLES and (not (is_primary_admin(adm) or is_original_primary_admin(adm)) or uid == adm["id"]):
         raise HTTPException(403, "Seul un autre administrateur principal peut valider le KYC d'un administrateur")
     s = "approved" if action == "approve" else "rejected"
     update_data = {
@@ -438,7 +438,7 @@ async def admin_get_pending_kyc(page: int = 1, limit: int = 20, status: str = "a
         q = {"kyc_status": status}
     
     # Clients go through KYC; administrator KYC is reviewed by primary admins only
-    if is_primary_admin(adm):
+    if is_primary_admin(adm) or is_original_primary_admin(adm):
         q["id"] = {"$ne": adm["id"]}
     else:
         q["role"] = {"$nin": list(NON_CLIENT_ROLES)}
