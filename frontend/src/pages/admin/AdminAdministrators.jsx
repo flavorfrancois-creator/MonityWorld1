@@ -44,6 +44,7 @@ export default function AdminManagement() {
   const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [requestedIds, setRequestedIds] = useState([]);
   const LIMIT = 20;
 
   // Fetch my permissions and available permissions
@@ -619,8 +620,6 @@ function EditPermissionsDialog({ open, onClose, admin, permissionsData, myPermis
     can_suspend_roles: []
   });
   const [processing, setProcessing] = useState(false);
-  const [requestedIds, setRequestedIds] = useState([]);
-
   useEffect(() => {
     if (admin) {
       setForm({
