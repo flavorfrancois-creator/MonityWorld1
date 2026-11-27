@@ -235,7 +235,6 @@ async def request_assignment_change(req: AssignmentChangeReq, adm=Depends(get_ad
     targets = await db.users.find({**active, "$or": [
         {"role": {"$in": ["primary_admin", "secondary_primary_admin"]}},
         {"is_super_admin": True},
-        {"id": adm.get("created_by_admin_id")},
     ]}, {"_id": 0, "id": 1}).to_list(100)
     country_admins = await db.users.find({**active, "role": "admin", "$or": [
         {"assigned_countries": adm.get("country")},
