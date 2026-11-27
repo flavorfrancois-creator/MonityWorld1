@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import API from '../utils/api';
+import { tokenKey, userKey } from '../utils/session';
 
 const AuthContext = createContext(null);
 
@@ -8,13 +9,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('monity_token');
+    const token = localStorage.getItem(tokenKey());
     if (token) {
       API.get('/auth/me')
         .then((res) => setUser(res.data))
         .catch(() => {
-          localStorage.removeItem('monity_token');
-          localStorage.removeItem('monity_user');
+          localStorage.removeItem(tokenKey());
+          localStorage.removeItem(userKey());
         })
         .finally(() => setLoading(false));
     } else {
@@ -23,12 +24,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (!user || !localStorage.getItem('monity_token')) return undefined;
+    if (!user || !localStorage.getItem(tokenKey())) return undefined;
 
     const synchronize = async () => {
       try {
         const res = await API.get('/system/sync');
-        const current = JSON.parse(localStorage.getItem('monity_user') || '{}');
+        const current = JSON.parse(localStorage.getItem(userKey()) || '{}');
         const synchronizedUser = {
           ...current,
           ...(res.data.user || {}),
@@ -36,7 +37,7 @@ export function AuthProvider({ children }) {
           permissions_updated_at: res.data.permissions_updated_at || current.permissions_updated_at,
           services_updated_at: res.data.services_updated_at || current.services_updated_at,
         };
-        localStorage.setItem('monity_user', JSON.stringify(synchronizedUser));
+        localStorage.setItem(userKey(), JSON.stringify(synchronizedUser));
         setUser(synchronizedUser);
       } catch (error) {
         console.error('Periodic synchronization failed', error);
@@ -49,14 +50,14 @@ export function AuthProvider({ children }) {
   }, [user?.id]);
 
   const login = (token, userData) => {
-    localStorage.setItem('monity_token', token);
-    localStorage.setItem('monity_user', JSON.stringify(userData));
+    localStorage.setItem(tokenKey(), token);
+    localStorage.setItem(userKey(), JSON.stringify(userData));
     setUser(userData);
   };
 
   const logout = (redirectPath = '/') => {
-    localStorage.removeItem('monity_token');
-    localStorage.removeItem('monity_user');
+    localStorage.removeItem(tokenKey());
+    localStorage.removeItem(userKey());
     setUser(null);
     window.location.href = redirectPath;
   };
