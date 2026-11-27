@@ -4,6 +4,7 @@ Extracted from server.py during refactoring
 """
 import os
 import logging
+import asyncio
 import random
 import string
 import secrets
@@ -103,10 +104,12 @@ async def start_admin_registration(req: AdminRegistrationStartReq, adm=Depends(g
         "created_by": adm["id"],
     })
     try:
-        wa_result = await send_whatsapp_otp(req.phone, phone_otp, country_code=req.country.upper())
+        wa_result, _ = await asyncio.gather(
+            send_whatsapp_otp(req.phone, phone_otp, country_code=req.country.upper()),
+            _send_admin_email_otp(req.email.lower().strip(), email_otp, req.country),
+        )
         if not wa_result.get("success"):
             raise RuntimeError(f"WhatsApp: {wa_result.get('error', 'envoi échoué')}")
-        await _send_admin_email_otp(req.email.lower().strip(), email_otp, req.country)
     except Exception as exc:
         await db.admin_registration_verifications.delete_one({"id": verification_id})
         logger.error("Administrator OTP delivery failed: %s", exc)

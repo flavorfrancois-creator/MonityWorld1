@@ -331,7 +331,7 @@ function CreateAdminDialog({ open, onClose, permissionsData, myPermissions, onSu
         }
         const result = await API.post('/admin/administrators/registration/start', {
           country: form.country, phone: form.phone, email: form.email
-        });
+        }, { timeout: 120000 });
         setVerificationId(result.data.verification_id);
         setRegistrationStep(2);
         toast.success('Deux codes OTP ont été envoyés');
