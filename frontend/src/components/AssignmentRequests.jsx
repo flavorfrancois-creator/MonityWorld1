@@ -42,6 +42,7 @@ export function AssignmentRequestButton() {
 }
 
 export function AssignmentRequestsInbox() {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const load = useCallback(() => {
     API.get('/admin/rbac/assignment-requests')
@@ -50,8 +51,6 @@ export function AssignmentRequestsInbox() {
   }, []);
   useEffect(() => { load(); }, [load]);
   if (!items.length) return null;
-
-  const navigate = useNavigate();
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 space-y-2" data-testid="assignment-inbox">
