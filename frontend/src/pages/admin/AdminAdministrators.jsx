@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import API from '../../utils/api';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
@@ -46,6 +47,7 @@ export default function AdminManagement() {
   const [processing, setProcessing] = useState(false);
   const [requestedIds, setRequestedIds] = useState([]);
   const LIMIT = 20;
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Fetch my permissions and available permissions
   useEffect(() => {
@@ -82,6 +84,15 @@ export default function AdminManagement() {
   useEffect(() => {
     fetchAdmins();
   }, [fetchAdmins]);
+
+  useEffect(() => {
+    const id = searchParams.get('edit');
+    if (!id || !admins.length) return;
+    const target = admins.find(a => a.id === id);
+    if (target && target.can_be_edited) { setSelectedAdmin(target); setShowPermissionsDialog(true); }
+    else if (target) toast.error("Vous n'avez pas le droit de modifier cet administrateur");
+    setSearchParams({}, { replace: true });
+  }, [admins, searchParams, setSearchParams]);
 
   const fetchRequests = useCallback(() => {
     API.get('/admin/rbac/assignment-requests')

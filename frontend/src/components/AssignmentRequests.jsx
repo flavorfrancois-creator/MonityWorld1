@@ -3,7 +3,8 @@ import API from '../utils/api';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Send, Check } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Send, Pencil } from 'lucide-react';
 
 export function AssignmentRequestButton() {
   const [open, setOpen] = useState(false);
@@ -50,10 +51,7 @@ export function AssignmentRequestsInbox() {
   useEffect(() => { load(); }, [load]);
   if (!items.length) return null;
 
-  const resolve = async (id) => {
-    try { await API.post(`/admin/rbac/assignment-requests/${id}/resolve`); toast.success('Demande traitée'); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || 'Erreur'); }
-  };
+  const navigate = useNavigate();
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 space-y-2" data-testid="assignment-inbox">
@@ -64,10 +62,10 @@ export function AssignmentRequestsInbox() {
             <p>{r.requester_name} <span className="text-muted-foreground">({r.requester_email})</span></p>
             {r.message && <p className="text-xs text-muted-foreground">{r.message}</p>}
           </div>
-          <Button size="sm" variant="outline" onClick={() => resolve(r.id)}><Check size={14} className="mr-1" /> Traité</Button>
+          <Button size="sm" variant="outline" onClick={() => navigate(`/admin/administrators?edit=${r.requester_id}`)}><Pencil size={14} className="mr-1" /> Modifier</Button>
         </div>
       ))}
-      <p className="text-xs text-muted-foreground">Modifiez ses services dans Administrateurs, puis cliquez sur « Traité ».</p>
+      <p className="text-xs text-muted-foreground">Cliquez sur « Modifier » pour changer ses fonctions ou services (obligatoire), puis enregistrez la nouvelle sélection : la demande est alors validée.</p>
     </div>
   );
 }
