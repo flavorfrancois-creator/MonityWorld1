@@ -7,6 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { AssignmentRequestButton, AssignmentRequestsInbox } from './AssignmentRequests';
 import { Camera, Lock, Mail, Phone, Trash2, User } from 'lucide-react';
 
 const errMsg = (e, fallback) => e?.response?.data?.detail || fallback;
@@ -95,6 +96,8 @@ export default function MyAccountPanel({ basics = true }) {
 
   return (
     <div className="space-y-6" data-testid="my-account-panel">
+      {basics && <AssignmentRequestsInbox />}
+      {basics && user?.created_by_admin_id && <AssignmentRequestButton />}
       {basics && (
         <Card>
           <CardHeader>

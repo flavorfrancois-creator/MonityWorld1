@@ -12,6 +12,7 @@ import {
 import { Button } from '../../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
+import { AssignmentRequestButton, AssignmentRequestsInbox } from '../../components/AssignmentRequests';
 
 const CHART_COLORS = ['#22c55e', '#3b82f6', '#eab308', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4', '#ec4899'];
 
@@ -209,6 +210,8 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
+      <AssignmentRequestsInbox />
+      {user?.created_by_admin_id && <AssignmentRequestButton />}
       {/* Country Filter Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-card border border-border rounded-xl p-4">
         <div>
