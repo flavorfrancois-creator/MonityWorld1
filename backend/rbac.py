@@ -230,6 +230,8 @@ def is_original_primary_admin(user: dict) -> bool:
 
 def can_manage_role(actor: dict, target_role: str) -> bool:
     """Check if actor can manage (create/edit/suspend) a user with target role."""
+    if is_original_primary_admin(actor):
+        return True
     actor_role = actor.get("role", "client")
     actor_level = get_role_level(actor_role)
     target_level = get_role_level(target_role)
