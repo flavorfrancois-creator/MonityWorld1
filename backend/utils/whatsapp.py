@@ -13,26 +13,18 @@ WHATSAPP_SERVICE_URL = os.environ.get("WHATSAPP_SERVICE_URL", "http://localhost:
 
 
 async def get_whatsapp_config_for_country(country_code: str, config_type: str = "whatsapp_web"):
-    config = await db.whatsapp_configs.find_one({
-        "is_active": True,
-        "config_type": config_type,
-        "countries": {"$in": [country_code.upper()]}
-    })
-    if config:
-        return config
-    config = await db.whatsapp_configs.find_one({
-        "is_active": True,
-        "config_type": config_type,
-        "countries": {"$in": ["*"]}
-    })
-    if config:
-        return config
-    config = await db.whatsapp_configs.find_one({
-        "is_active": True,
-        "config_type": config_type,
-        "is_default": True
-    })
-    return config
+    # Configs created from the admin "Numéros OTP" tab are stored with type "otp"
+    types = [config_type, "otp"] if config_type == "whatsapp_web" else [config_type]
+    base = {"is_active": True, "config_type": {"$in": types}}
+    for extra in (
+        {"countries": {"$in": [country_code.upper()]}},
+        {"countries": {"$in": ["*"]}},
+        {"is_default": True},
+    ):
+        config = await db.whatsapp_configs.find_one({**base, **extra})
+        if config:
+            return config
+    return None
 
 
 async def send_whatsapp_message(phone: str, message: str, country_code: str = None) -> dict:
