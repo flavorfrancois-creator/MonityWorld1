@@ -233,30 +233,6 @@ export default function AdminLayout({ children }) {
         </header>
         
         {/* KYC Warning Banner */}
-        {myPermissions?.kyc_required && !myPermissions?.kyc_exempt && (
-          <div className="bg-orange-500/10 border-b border-orange-500/30 px-4 lg:px-6 py-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
-                <Shield size={16} className="text-orange-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-orange-400">
-                  Vérification d'identité requise
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Certaines fonctionnalités sont limitées jusqu'à l'approbation de votre KYC administrateur par un administrateur principal.
-                  <span className="ml-1 text-orange-400/80">
-                    Statut actuel: {myPermissions?.kyc_status === 'pending' ? 'En attente' : 
-                                   myPermissions?.kyc_status === 'submitted' ? 'Soumis' :
-                                   myPermissions?.kyc_status === 'pre_approved' ? 'Pré-approuvé' :
-                                   myPermissions?.kyc_status === 'rejected' ? 'Rejeté' : 
-                                   myPermissions?.kyc_status}
-                  </span>
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
         
         <main className="flex-1 overflow-y-auto">
           {children}
