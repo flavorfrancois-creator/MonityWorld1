@@ -13,7 +13,7 @@ export function AssignmentRequestButton() {
   const send = async () => {
     setBusy(true);
     try {
-      const r = await API.post('/rbac/assignment-requests', { message });
+      const r = await API.post('/admin/rbac/assignment-requests', { message });
       toast.success(r.data.message);
       setOpen(false);
       setMessage('');
@@ -31,7 +31,7 @@ export function AssignmentRequestButton() {
         <div className="mt-3 space-y-2 max-w-md">
           <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Services souhaités (facultatif)" />
           <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={send}>Envoyer à l'administrateur créateur</Button>
+            <Button size="sm" disabled={busy} onClick={send}>Envoyer aux administrateurs</Button>
             <Button size="sm" variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
           </div>
         </div>
@@ -43,7 +43,7 @@ export function AssignmentRequestButton() {
 export function AssignmentRequestsInbox() {
   const [items, setItems] = useState([]);
   const load = useCallback(() => {
-    API.get('/rbac/assignment-requests')
+    API.get('/admin/rbac/assignment-requests')
       .then((r) => setItems((r.data.received || []).filter((x) => x.status === 'pending')))
       .catch(() => {});
   }, []);
@@ -51,7 +51,7 @@ export function AssignmentRequestsInbox() {
   if (!items.length) return null;
 
   const resolve = async (id) => {
-    try { await API.post(`/rbac/assignment-requests/${id}/resolve`); toast.success('Demande traitée'); load(); }
+    try { await API.post(`/admin/rbac/assignment-requests/${id}/resolve`); toast.success('Demande traitée'); load(); }
     catch (e) { toast.error(e.response?.data?.detail || 'Erreur'); }
   };
 

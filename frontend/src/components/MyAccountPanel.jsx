@@ -97,7 +97,7 @@ export default function MyAccountPanel({ basics = true }) {
   return (
     <div className="space-y-6" data-testid="my-account-panel">
       {basics && <AssignmentRequestsInbox />}
-      {basics && user?.created_by_admin_id && <AssignmentRequestButton />}
+      {basics && !['primary_admin','secondary_primary_admin'].includes(user?.role) && <AssignmentRequestButton />}
       {basics && (
         <Card>
           <CardHeader>

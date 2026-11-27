@@ -231,40 +231,39 @@ class AssignmentChangeReq(BaseModel):
 @router.post("/rbac/assignment-requests")
 async def request_assignment_change(req: AssignmentChangeReq, adm=Depends(get_admin)):
     """Ask the admin who created this account to change the services assigned to it."""
-    creator_id = adm.get("created_by_admin_id")
-    creator = await db.users.find_one({"id": creator_id}) if creator_id else None
-    if not creator:
-        creator = await db.users.find_one({"role": "primary_admin", "is_original_primary": True}) or await db.users.find_one({"role": "primary_admin"})
-    if not creator or creator["id"] == adm["id"]:
-        raise HTTPException(400, "Aucun administrateur créateur à contacter")
+    targets = await db.users.find({"role": {"$in": ["primary_admin", "secondary_primary_admin"]}, "is_suspended": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(100)
+    country_admins = await db.users.find({"role": "admin", "assigned_countries": adm.get("country"), "is_suspended": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(100)
+    target_ids = sorted({t["id"] for t in targets + country_admins} - {adm["id"]})
+    if not target_ids:
+        raise HTTPException(400, "Aucun administrateur à contacter")
     if await db.assignment_requests.find_one({"requester_id": adm["id"], "status": "pending"}):
         raise HTTPException(400, "Une demande est déjà en attente")
     doc = {
         "id": gen_id(), "requester_id": adm["id"], "requester_name": adm.get("name"),
         "requester_email": adm.get("email"), "requester_role": adm.get("role"),
-        "target_admin_id": creator["id"], "message": (req.message or "").strip()[:1000],
+        "target_admin_ids": target_ids, "message": (req.message or "").strip()[:1000],
         "status": "pending", "created_at": now_iso(),
     }
     await db.assignment_requests.insert_one(dict(doc))
-    await db.notifications.insert_one({
-        "id": gen_id(), "user_id": creator["id"], "type": "assignment_change_request",
+    await db.notifications.insert_many([{
+        "id": gen_id(), "user_id": tid, "type": "assignment_change_request",
         "title": "Demande de modification des attributions",
         "message": f"{adm.get('name')} ({adm.get('email')}) demande la modification de ses services attribués. {doc['message']}",
         "is_read": False, "created_at": doc["created_at"],
-    })
-    return {"message": f"Demande envoyée à {creator.get('name')}", "request_id": doc["id"]}
+    } for tid in target_ids])
+    return {"message": f"Demande envoyée à {len(target_ids)} administrateur(s)", "request_id": doc["id"]}
 
 
 @router.get("/rbac/assignment-requests")
 async def list_assignment_requests(adm=Depends(get_admin)):
-    received = await db.assignment_requests.find({"target_admin_id": adm["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    received = await db.assignment_requests.find({"target_admin_ids": adm["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     mine = await db.assignment_requests.find({"requester_id": adm["id"]}, {"_id": 0}).sort("created_at", -1).to_list(20)
     return {"received": received, "mine": mine}
 
 
 @router.post("/rbac/assignment-requests/{rid}/resolve")
 async def resolve_assignment_request(rid: str, adm=Depends(get_admin)):
-    r = await db.assignment_requests.find_one({"id": rid, "target_admin_id": adm["id"]})
+    r = await db.assignment_requests.find_one({"id": rid, "target_admin_ids": adm["id"]})
     if not r:
         raise HTTPException(404, "Demande introuvable")
     await db.assignment_requests.update_one({"id": rid}, {"$set": {"status": "done", "resolved_at": now_iso()}})

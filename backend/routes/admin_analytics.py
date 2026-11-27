@@ -290,7 +290,12 @@ async def get_analytics_overview(adm=Depends(get_admin)):
         "role": "client"
     })
     
-    pending_kyc = await db.users.count_documents({"kyc_status": "pending"})
+    kyc_q = {"kyc_status": {"$in": ["pending", "incomplete", "submitted", "clarification_needed"]}}
+    if is_primary_admin(adm):
+        kyc_q["id"] = {"$ne": adm["id"]}
+    else:
+        kyc_q["role"] = {"$nin": list(NON_CLIENT_ROLES)}
+    pending_kyc = await db.users.count_documents(kyc_q)
     pending_partners = await db.partners.count_documents({"status": "pending"})
     pending_withdrawals = await db.transactions.count_documents({"type": "withdrawal", "status": "pending"})
     
