@@ -97,7 +97,7 @@ function AppRoutes() {
       <Route path="/savings" element={<ProtectedRoute><Layout><SavingsPage /></Layout></ProtectedRoute>} />
       <Route path="/cotisation" element={<ProtectedRoute><Layout><CotisationPage /></Layout></ProtectedRoute>} />
       <Route path="/referral" element={<ProtectedRoute><Layout><ReferralPage /></Layout></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute><Layout><ProfilePage /></Layout></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute>{['admin', 'manager', 'primary_admin', 'secondary_primary_admin'].includes(user?.role) ? <Navigate to="/admin/my-account" replace /> : <Layout><ProfilePage /></Layout>}</ProtectedRoute>} />
       <Route path="/qr" element={<ProtectedRoute><Layout><QRPayment /></Layout></ProtectedRoute>} />
       <Route path="/virtual-cards" element={<ProtectedRoute><Layout><VirtualCards /></Layout></ProtectedRoute>} />
       <Route path="/bank-cards" element={<ProtectedRoute><Layout><BankCardsPage /></Layout></ProtectedRoute>} />

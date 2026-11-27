@@ -244,7 +244,7 @@ export default function AdminLayout({ children }) {
                   Vérification d'identité requise
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Certaines fonctionnalités sont limitées. Complétez votre KYC pour un accès complet.
+                  Certaines fonctionnalités sont limitées jusqu'à l'approbation de votre KYC administrateur par un administrateur principal.
                   <span className="ml-1 text-orange-400/80">
                     Statut actuel: {myPermissions?.kyc_status === 'pending' ? 'En attente' : 
                                    myPermissions?.kyc_status === 'submitted' ? 'Soumis' :
@@ -254,14 +254,6 @@ export default function AdminLayout({ children }) {
                   </span>
                 </p>
               </div>
-              <Button 
-                size="sm" 
-                variant="outline" 
-                className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10"
-                onClick={() => window.location.href = '/profile'}
-              >
-                Compléter KYC
-              </Button>
             </div>
           </div>
         )}

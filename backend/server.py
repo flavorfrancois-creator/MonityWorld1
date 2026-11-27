@@ -1240,15 +1240,15 @@ async def register(req: RegisterReq):
         raise HTTPException(400, "Ce numéro appartient à un compte supprimé depuis moins de 3 mois. Utilisez « Restaurer mon compte » ou réessayez plus tard.")
     if req.email and await db.users.find_one({"email": req.email.lower(), "is_deleted": True}):
         raise HTTPException(400, "Cet email appartient à un compte supprimé depuis moins de 3 mois. Utilisez « Restaurer mon compte » ou réessayez plus tard.")
-    if await db.users.find_one({"phone": req.phone}):
+    if await db.users.find_one({"phone": req.phone, "role": {"$nin": NON_CLIENT_ROLES}}):
         raise HTTPException(400, "Ce numéro est déjà enregistré")
+    if not req.email and await db.users.find_one({"phone": req.phone, "role": {"$in": NON_CLIENT_ROLES}}):
+        raise HTTPException(400, "Ce numéro est réservé à un administrateur. Utilisez une adresse e-mail différente pour créer un compte client.")
     if req.email:
         if await db.users.find_one({"email": req.email.lower()}):
             raise HTTPException(400, "Cet email est déjà enregistré")
         if await db.users.find_one({"email": req.email.lower(), "role": {"$in": NON_CLIENT_ROLES}}):
             raise HTTPException(400, "Cette adresse mail est réservée à un administrateur")
-    if await db.users.find_one({"phone": req.phone, "role": {"$in": NON_CLIENT_ROLES}}):
-        raise HTTPException(400, "Ce numéro est réservé à un administrateur")
     
     # Check if NFC card number is provided and valid
     linked_card = None
@@ -1412,7 +1412,9 @@ async def login(req: LoginReq):
     """Login with phone OR email - CLIENT ONLY"""
     user = None
     if req.phone:
-        user = await db.users.find_one({"phone": req.phone})
+        user = await db.users.find_one({"phone": req.phone, "role": {"$nin": NON_CLIENT_ROLES}})
+        if user and await db.users.find_one({"phone": req.phone, "role": {"$in": NON_CLIENT_ROLES}}):
+            raise HTTPException(400, "Ce numéro est aussi utilisé par un administrateur. Connectez-vous avec votre adresse e-mail.")
     elif req.email:
         user = await db.users.find_one({"email": req.email.lower()})
     
@@ -1515,7 +1517,7 @@ async def admin_login(req: LoginReq):
     """Login for admin/manager roles ONLY"""
     user = None
     if req.phone:
-        user = await db.users.find_one({"phone": req.phone})
+        user = await db.users.find_one({"phone": req.phone, "role": {"$in": NON_CLIENT_ROLES}})
     elif req.email:
         user = await db.users.find_one({"email": req.email.lower()})
     
@@ -2832,7 +2834,7 @@ async def transfer_preview(req: TransferReq, u=Depends(get_current_user)):
     # Find receiver
     receiver = None
     if req.receiver_phone:
-        receiver = await db.users.find_one({"phone": req.receiver_phone})
+        receiver = await db.users.find_one({"phone": req.receiver_phone, "role": {"$nin": NON_CLIENT_ROLES}})
     elif req.receiver_account:
         receiver = await db.users.find_one({"account_number": req.receiver_account})
     if not receiver: 
@@ -2953,7 +2955,7 @@ async def transfer(req: TransferReq, u=Depends(get_tx_user)):
     # Find receiver
     receiver = None
     if req.receiver_phone:
-        receiver = await db.users.find_one({"phone": req.receiver_phone})
+        receiver = await db.users.find_one({"phone": req.receiver_phone, "role": {"$nin": NON_CLIENT_ROLES}})
     elif req.receiver_account:
         receiver = await db.users.find_one({"account_number": req.receiver_account})
     if not receiver: raise HTTPException(404, "Destinataire non trouvé")

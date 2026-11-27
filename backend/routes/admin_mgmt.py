@@ -42,6 +42,7 @@ from utils.whatsapp import send_whatsapp_otp
 
 logger = logging.getLogger(__name__)
 
+ADMIN_ROLES_LOCAL = ["primary_admin", "secondary_primary_admin", "admin", "manager"]
 router = APIRouter(prefix="/api/admin", tags=['Admin Management'])
 
 
@@ -86,7 +87,7 @@ async def start_admin_registration(req: AdminRegistrationStartReq, adm=Depends(g
     dial_code = country.get("dial_code") or country.get("phone_prefix")
     if dial_code and not req.phone.startswith(dial_code):
         raise HTTPException(400, f"Le numéro doit commencer par {dial_code}")
-    if await db.users.find_one({"phone": req.phone}):
+    if await db.users.find_one({"phone": req.phone, "role": {"$in": ADMIN_ROLES_LOCAL}}):
         raise HTTPException(400, "Ce numéro de téléphone est déjà utilisé")
     if await db.users.find_one({"email": req.email.lower().strip()}):
         raise HTTPException(400, "Cette adresse mail est déjà utilisée")
@@ -141,7 +142,7 @@ async def complete_admin_registration(req: AdminRegistrationCompleteReq, adm=Dep
     })
     if not record:
         raise HTTPException(400, "Vérification OTP requise")
-    if await db.users.find_one({"phone": record["phone"]}) or await db.users.find_one({"email": record["email"]}):
+    if await db.users.find_one({"phone": record["phone"], "role": {"$in": ADMIN_ROLES_LOCAL}}) or await db.users.find_one({"email": record["email"]}):
         raise HTTPException(400, "Le téléphone ou l'adresse mail est déjà utilisé")
     if len(req.password) < 8:
         raise HTTPException(400, "Le mot de passe doit contenir au moins 8 caractères")
@@ -330,7 +331,7 @@ async def create_administrator_v2(req: AdminCreateReqV2, adm=Depends(get_admin_w
     req.assigned_countries = [req.country]
     
     # Check if phone already exists
-    if await db.users.find_one({"phone": req.phone}):
+    if await db.users.find_one({"phone": req.phone, "role": {"$in": ADMIN_ROLES_LOCAL}}):
         raise HTTPException(400, "Ce numéro de téléphone est déjà utilisé")
     
     if req.email and await db.users.find_one({"email": req.email}):
